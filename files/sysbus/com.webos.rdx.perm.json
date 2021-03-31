@@ -1,0 +1,3 @@
+{
+    "com.webos.rdx.*": ["application.operation", "session.management", "systemsettings.query","vehicle.operation","vehicle.query", "sdpclient.operation" ]
+}

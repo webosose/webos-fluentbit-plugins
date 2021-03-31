@@ -1,10 +1,10 @@
 Summary
 -------
-TBD
+webos-fluentbit-plugins for webOS OSE
 
 Description
 -----------
-TBD
+It is the fluent-bit plugins for webOS OSE
 
 # Copyright and License Information
 

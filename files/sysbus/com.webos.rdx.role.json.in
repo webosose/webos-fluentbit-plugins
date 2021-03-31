@@ -1,0 +1,12 @@
+ {
+     "exeName":"@WEBOS_INSTALL_BINDIR@/fluent-bit",
+     "trustLevel" : "oem",
+     "allowedNames":["com.webos.rdx.*"],
+     "type":"regular",
+     "permissions":[
+         {
+             "service":"com.webos.rdx.*",
+             "outbound":["*"]
+        }
+    ]
+}
