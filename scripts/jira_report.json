@@ -1,0 +1,13 @@
+{
+    "jira": {
+        "url" : "https://jira2.lgsvl.com"
+    },
+    "account" : {
+        "id": "unknown",
+        "pw": "unknown"
+    },
+    "developer": {
+        "debug": false,
+        "info": false
+    }
+}
