@@ -6,21 +6,26 @@ from pprint import pprint
 from datetime import date
 from datetime import timedelta
 
-with open('jira_report.json') as json_file:
-    json_data = json.load(json_file)
+with open('webos_jira_ro.json') as json_file:
+    configs = json.load(json_file)
+
+with open('webos_jira_rw.json') as json_file:
+    rw_configs = json.load(json_file)
+    for config in rw_configs:
+        configs[config] = rw_configs[config]
 
 def get_value(first_key, second_key=None, third_key=None):
     if second_key is None:
-        return json_data[first_key]
+        return configs[first_key]
     elif third_key is None:
-        return json_data[first_key][second_key]
+        return configs[first_key][second_key]
     else:
-        return json_data[first_key][second_key][third_key]
+        return configs[first_key][second_key][third_key]
 
 def set_value(first_key, second_key, third_key, value):
     if second_key is None:
-        json_data[first_key] = value
+        configs[first_key] = value
     elif third_key is None:
-        json_data[first_key][second_key] = value
+        configs[first_key][second_key] = value
     else:
-        json_data[first_key][second_key][third_key] = value
+        configs[first_key][second_key][third_key] = value
