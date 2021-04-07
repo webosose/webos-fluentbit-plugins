@@ -24,8 +24,10 @@ webos_modules_init(1 6 3)
 webos_component(1 0 0)
 
 add_subdirectory(python3-webos)
-
 webos_include_install_paths()
+
+include(FindPkgConfig)
+add_subdirectory(src)
 
 # install
 webos_build_system_bus_files()
