@@ -10,10 +10,13 @@ RW_CONFIG = 'webos_jira_rw.json'
 with open(RO_CONFIG) as json_file:
     mm_configs = json.load(json_file)
 
-with open(RW_CONFIG) as json_file:
-    rw_configs = json.load(json_file)
-    for config in rw_configs:
-        mm_configs[config] = rw_configs[config]
+try:
+    with open(RW_CONFIG) as json_file:
+        rw_configs = json.load(json_file)
+        for config in rw_configs:
+            mm_configs[config] = rw_configs[config]
+except:
+    print("RW Config doesn't exist")
 
 def get_value(first_key, second_key=None, third_key=None):
     if second_key is None:

@@ -1,5 +1,5 @@
 *.pyc
 __pycache__
-test
+test*
 screenlog*
 webos_jira_rw.json
