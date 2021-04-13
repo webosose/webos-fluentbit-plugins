@@ -2,7 +2,31 @@
     "jira": {
         "url" : "https://jira2.lgsvl.com"
     },
-    "account" : {
+    "account": {
+        "id": "python autoupdater",
+        "pw": "Password!!11"
+    },
+    "platform": {
+        "commands": [
+            "date -R",
+            "uptime",
+            "ps aux",
+            "df -h",
+            "ls -l /var/luna/preferences",
+            "ls-monitor --list",
+            "ifconfig",
+            "opkg list",
+            "luna-send -n 1 -f luna://com.webos.service.connectionmanager/getStatus '{}'",
+            "luna-send -n 1 -f luna://com.webos.applicationManager/running '{}'"
+        ],
+        "files": [
+            "/proc/cpuinfo",
+            "/proc/mounts",
+            "/etc/version",
+            "/sys/class/mmc_host/mmc0/mmc0:0001/manfid",
+            "/sys/class/mmc_host/mmc0/mmc0:0001/oemid",
+            "/sys/class/mmc_host/mmc0/mmc0:0001/serial"
+        ]
     },
     "developer": {
         "debug": true,
