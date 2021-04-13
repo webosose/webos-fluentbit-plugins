@@ -7,8 +7,15 @@ from atlassian import Jira
 import util.logger as logger
 import util.config as config
 
+from base.nyx import NYX
+from webos_info import WebOSInfo
+from webos_uploader import WebOSUploader
+
 
 UNKNOWN = 'Unknown'
+DEFAULT_JOURNALD='/tmp/webos_journald.txt'
+DEFAULT_INFO='/tmp/webos_info.txt'
+
 
 class WebOSJira:
     _instance = None
@@ -52,7 +59,7 @@ class WebOSJira:
         except:
             return False
 
-    def create_issue(self, summary=None, description=None, unique_summary=False):
+    def create_issue(self, summary=None, description=None, unique_summary=False, component=UNKNOWN):
         if summary is None and description is None:
             return None
 
@@ -60,11 +67,19 @@ class WebOSJira:
             "project":{
                 "key":"PLAT"
             },
-            "customfield_10101": "TBD",
-            "components":[
+            "customfield_10101": NYX.instance().get_info()['webos_build_id'],
+            "customfield_10400": [
                 {
-                    "name": UNKNOWN
+                    "value": NYX.instance().get_device_name(),
                 }
+            ],
+            "components": [
+                {
+                    "name": component
+                }
+            ],
+            "labels":[
+                "Link-RDX-Server"
             ],
             "issuetype": {
                 "name": "Bug"
@@ -103,15 +118,19 @@ class WebOSJira:
         return
 
     def upload_files(self, key, files):
-        if files is None:
+        if files is None or len(files) == 0:
             return
 
-        for file in files:
-            if os.path.exists(file) is False:
-                logger.info("'{}' doesn't exist".format(file))
-                continue
-            logger.info('TODO : Try to upload file "{}"'.format(file))
-        return
+        true_files, false_files = WebOSUploader.instance().exists(files)
+        server_files = WebOSUploader.instance().upload_files(key, true_files)
+
+        comment = "==== AUTO GENERATED SYSTEM INFO ====\n\n"
+        for i, file in enumerate(true_files):
+            comment += "[{}|{}]\n".format(os.path.basename(file), server_files[i])
+        self.add_comment(key, comment)
+
+    def add_comment(self, key, comment):
+        self._jira.issue_add_comment(key, comment)
 
     def check_key(self, key):
         return self._jira.issue_exists(key)
@@ -130,9 +149,13 @@ if __name__ == "__main__":
     parser.add_argument('--unique-summary',     action='store_true', help='Create ticket only if it is a unique summary')
     parser.add_argument('--description',        type=str, help='jira description')
     parser.add_argument('--append-description', action='store_true', help='Enable appendmode.')
+    parser.add_argument('--component',          type=str, default=UNKNOWN, help='jira component')
+    parser.add_argument('--comment',            type=str, help='jira comment')
 
     parser.add_argument('--attach-files',       type=str, nargs='*', help='Files for jira attachements')
     parser.add_argument('--upload-files',       type=str, nargs='*', help='Files for file server. The URLs are added to description')
+
+    parser.add_argument('--without-info',       action='store_true', help='Disable uploading system information')
 
     args = parser.parse_args()
 
@@ -145,25 +168,41 @@ if __name__ == "__main__":
             logger.error("'id' and 'pw' are needed")
             exit(1)
 
-    key = None
-    if args.key is not None:
+    key = args.key
+    upload_files = args.upload_files
+    if upload_files is None:
+        upload_files = []
+
+    if key is not None:
         # handle 'UPDATE' mode
         result = WebOSJira.instance().update_issue(args.key, args.summary, args.description, args.append_description)
         if result is False:
             logger.error("Failed to update '{}'".format(args.key))
             exit(1)
-        key = args.key
-    else:
+    elif args.summary is not None:
         # handle 'CREATE' mode
-        result = WebOSJira.instance().create_issue(args.summary, args.description, args.unique_summary)
+        result = WebOSJira.instance().create_issue(args.summary, args.description, args.unique_summary, args.component)
         if result is None or 'key' not in result:
             logger.error("Failed to create new ticket")
             exit(1)
         key = result['key']
         logger.info("'{}' is created".format(key))
 
+        if args.without_info is False:
+            WebOSInfo.instance().capture_journald(DEFAULT_JOURNALD)
+            WebOSInfo.instance().capture_info()
+
+            upload_files.append(DEFAULT_JOURNALD)
+            upload_files.append(DEFAULT_INFO)
+    else:
+        logger.info("'key' or 'summary' is needed")
+        exit(1)
+
     # handle 'attach-files'
     WebOSJira.instance().attach_files(key, args.attach_files)
 
     # handle 'upload-files'
-    WebOSJira.instance().upload_files(key, args.upload_files)
+    WebOSJira.instance().upload_files(key, upload_files)
+
+    if args.comment is not None:
+        WebOSJira.instance().add_comment(key, args.comment)

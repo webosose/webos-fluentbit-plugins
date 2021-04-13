@@ -16,6 +16,7 @@
             "ls-monitor --list",
             "ifconfig",
             "opkg list",
+            "systemctl --failed --no-page",
             "luna-send -n 1 -f luna://com.webos.service.connectionmanager/getStatus '{}'",
             "luna-send -n 1 -f luna://com.webos.applicationManager/running '{}'"
         ],
@@ -31,5 +32,8 @@
     "developer": {
         "debug": true,
         "info": true
+    },
+    "deviceName": {
+        "device_name": "OSE-RPi4"
     }
 }

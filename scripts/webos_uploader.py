@@ -28,7 +28,7 @@ class WebOSUploader:
             A.append(file)
         return A, B
 
-    def upload_files(self, key, url, upload_files):
+    def upload_files(self, key, upload_files, url='http://10.177.242.144:3002/upload'):
         if len(upload_files) == 0:
             return []
 
@@ -52,13 +52,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # handle 'id' and 'pw' first
     if args.key is None or args.url is None or args.upload_files is None:
         print("Required parameters are missing.")
         exit(1)
 
     true_files, false_files = WebOSUploader.instance().exists(args.upload_files)
-    server_files = WebOSUploader.instance().upload_files(args.key, args.url, true_files)
+    server_files = WebOSUploader.instance().upload_files(args.key, true_files, args.url)
     for i, file in enumerate(true_files):
         print("[OK] '{}' : '{}'".format(file, server_files[i]))
     for file in false_files:

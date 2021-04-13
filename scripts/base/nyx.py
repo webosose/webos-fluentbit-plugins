@@ -1,7 +1,5 @@
 import subprocess
 
-UNKNOWN = '<unknown>'
-
 class NYX:
     _instance = None
 
@@ -28,14 +26,21 @@ class NYX:
 
     def query(self, category, name):
         try:
-            result = subprocess.check_output(['nyx-cmd', category, 'query', name])
+            result = subprocess.check_output(['nyx-cmd', category, 'query', name], stderr=subprocess.DEVNULL)
             result = result.decode("utf-8").rstrip()
             return result
         except:
-            return UNKNOWN
+            return '<unknown>'
 
     def get_info(self):
         return self.info
+
+    def get_device_name(self):
+        if self.info['device_name'] == "raspberrypi4":
+            return "OSE-RPi4"
+        else:
+            return None
+
 
     def print(self):
         print('serial_number: {}'.format(self.info['serial_number']))

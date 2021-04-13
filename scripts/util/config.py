@@ -4,8 +4,8 @@ from pprint import pprint
 from datetime import date
 from datetime import timedelta
 
-RO_CONFIG = 'webos_jira_ro.json'
-RW_CONFIG = 'webos_jira_rw.json'
+RO_CONFIG = 'webos_rdx.json'
+RW_CONFIG = '/var/luna/preferences/webos_rdx.json'
 
 with open(RO_CONFIG) as json_file:
     mm_configs = json.load(json_file)
@@ -16,7 +16,7 @@ try:
         for config in rw_configs:
             mm_configs[config] = rw_configs[config]
 except:
-    print("RW Config doesn't exist")
+    rw_configs = {}
 
 def get_value(first_key, second_key=None, third_key=None):
     if second_key is None:
