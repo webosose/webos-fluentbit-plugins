@@ -1,13 +1,14 @@
+#!/usr/bin/python3
+
 import argparse
 import os
 import json
 import subprocess
 
-import util.logger as logger
-import util.config as config
+import webos_common as common
 
-from base.nyx import NYX
-from base.platform import Platform
+from webos_common import NYX
+from webos_common import Platform
 
 DEFAULT_JOURNALD='/tmp/webos_journald.txt'
 DEFAULT_INFO='/tmp/webos_info.txt'
@@ -64,11 +65,11 @@ class WebOSInfo:
         WebOSInfo.instance().open(file)
         WebOSInfo.instance().write('INFO', json.dumps(NYX.instance().get_info(), indent=4, sort_keys=True))
 
-        for command in config.get_value('platform', 'commands'):
+        for command in common.get_value('platform', 'commands'):
             result = Platform.instance().execute(command)
             WebOSInfo.instance().write(command, result)
 
-        for file in config.get_value('platform', 'files'):
+        for file in common.get_value('platform', 'files'):
             result = Platform.instance().cat(file)
             WebOSInfo.instance().write(file, result)
         WebOSInfo.instance().close()

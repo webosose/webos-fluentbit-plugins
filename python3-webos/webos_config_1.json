@@ -29,11 +29,48 @@
             "/sys/class/mmc_host/mmc0/mmc0:0001/serial"
         ]
     },
+    "customfield": {
+        "components": [
+            "Accessibility",
+            "Activity Manager",
+            "AI Service",
+            "Analytics",
+            "App - Home (OSE)",
+            "App - Volume (OSE)",
+            "AppInstall",
+            "Apps - Browser",
+            "Apps - Platform",
+            "Apps - QML",
+            "Architecture",
+            "Audio Framework",
+            "audiod",
+            "Bluetooth",
+            "Bootd",
+            "Build",
+            "Common Services",
+            "configd",
+            "Connection Manager",
+            "Connectivity",
+            "CoreOS",
+            "DB8",
+            "Enact",
+            "Enact Browser",
+            "Intent",
+            "IST",
+            "LS2",
+            "Memory Manager",
+            "systemd",
+            "UMS",
+            "WAM"
+        ]
+    },
     "developer": {
         "debug": true,
         "info": true
     },
     "deviceName": {
-        "device_name": "OSE-RPi4"
+        "raspberrypi4": "OSE-RPi4",
+        "OSE-RPi3": "OSE-RPi3",
+        "OSE-Emulator": "OSE-Emulator"
     }
 }

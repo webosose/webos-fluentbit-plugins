@@ -1,14 +1,15 @@
+#!/usr/bin/python3
+
 import argparse
 import os
 
 from pprint import pprint
 from atlassian import Jira
 
-import util.logger as logger
-import util.config as config
+import webos_common as common
 
-from base.nyx import NYX
-from webos_info import WebOSInfo
+from webos_common import NYX
+from webos_sysinfo import WebOSInfo
 from webos_uploader import WebOSUploader
 
 
@@ -17,7 +18,7 @@ DEFAULT_JOURNALD='/tmp/webos_journald.txt'
 DEFAULT_INFO='/tmp/webos_info.txt'
 
 
-class WebOSJira:
+class WebOSIssue:
     _instance = None
 
     @classmethod
@@ -32,9 +33,9 @@ class WebOSJira:
 
     def __init__(self):
         self._jira = Jira(
-            url=config.get_value('jira', 'url'),
-            username=config.get_value('account', 'id'),
-            password=config.get_value('account', 'pw'))
+            url=common.get_value('jira', 'url'),
+            username=common.get_value('account', 'id'),
+            password=common.get_value('account', 'pw'))
         return
 
     def update_issue(self, key, summary=None, description=None, append_description=False):
@@ -44,7 +45,7 @@ class WebOSJira:
         fields = {}
         if append_description:
             if description is None:
-                logger.error("'description' is required")
+                common.error("'description' is required")
                 return
             description = self._jira.issue_field_value(key, 'description') + '\n' + description
 
@@ -92,10 +93,10 @@ class WebOSJira:
 
         if unique_summary:
             if summary is None:
-                logger.error("'summary' is required")
+                common.error("'summary' is required")
                 return
             if self.check_summary(summary) is True:
-                logger.info("'{}' is already created".format(summary))
+                common.info("'{}' is already created".format(summary))
                 return None
         return self._jira.issue_create(fields)
 
@@ -112,7 +113,7 @@ class WebOSJira:
 
         for file in files:
             if os.path.exists(file) is False:
-                logger.error("'{}' doesn't exist".format(file))
+                common.error("'{}' doesn't exist".format(file))
                 continue
             self._jira.add_attachment(key, file)
         return
@@ -162,10 +163,10 @@ if __name__ == "__main__":
     # handle 'id' and 'pw' first
     if args.id is not None or args.pw is not None:
         if args.id is not None and args.pw is not None:
-            config.set_value('account', 'id', None, args.id)
-            config.set_value('account', 'pw', None, args.pw)
+            common.set_value('account', 'id', None, args.id)
+            common.set_value('account', 'pw', None, args.pw)
         else:
-            logger.error("'id' and 'pw' are needed")
+            common.error("'id' and 'pw' are needed")
             exit(1)
 
     key = args.key
@@ -175,18 +176,18 @@ if __name__ == "__main__":
 
     if key is not None:
         # handle 'UPDATE' mode
-        result = WebOSJira.instance().update_issue(args.key, args.summary, args.description, args.append_description)
+        result = WebOSIssue.instance().update_issue(args.key, args.summary, args.description, args.append_description)
         if result is False:
-            logger.error("Failed to update '{}'".format(args.key))
+            common.error("Failed to update '{}'".format(args.key))
             exit(1)
     elif args.summary is not None:
         # handle 'CREATE' mode
-        result = WebOSJira.instance().create_issue(args.summary, args.description, args.unique_summary, args.component)
+        result = WebOSIssue.instance().create_issue(args.summary, args.description, args.unique_summary, args.component)
         if result is None or 'key' not in result:
-            logger.error("Failed to create new ticket")
+            common.error("Failed to create new ticket")
             exit(1)
         key = result['key']
-        logger.info("'{}' is created".format(key))
+        common.info("'{}' is created".format(key))
 
         if args.without_info is False:
             WebOSInfo.instance().capture_journald(DEFAULT_JOURNALD)
@@ -195,14 +196,14 @@ if __name__ == "__main__":
             upload_files.append(DEFAULT_JOURNALD)
             upload_files.append(DEFAULT_INFO)
     else:
-        logger.info("'key' or 'summary' is needed")
+        common.info("'key' or 'summary' is needed")
         exit(1)
 
     # handle 'attach-files'
-    WebOSJira.instance().attach_files(key, args.attach_files)
+    WebOSIssue.instance().attach_files(key, args.attach_files)
 
     # handle 'upload-files'
-    WebOSJira.instance().upload_files(key, upload_files)
+    WebOSIssue.instance().upload_files(key, upload_files)
 
     if args.comment is not None:
-        WebOSJira.instance().add_comment(key, args.comment)
+        WebOSIssue.instance().add_comment(key, args.comment)
