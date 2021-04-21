@@ -48,7 +48,6 @@ class NYX:
         else:
             return None
 
-
     def print(self):
         print('serial_number: {}'.format(self.info['serial_number']))
         print('product_id: {}'.format(self.info['product_id']))

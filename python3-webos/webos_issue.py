@@ -101,6 +101,8 @@ class WebOSIssue:
         return self._jira.issue_create(fields)
 
     def check_summary(self, summary):
+        summary = summary.replace("[","\\\\[")
+        summary = summary.replace("]","\\\\]")
         JQL = 'project = PLAT AND summary ~ "{}" AND issuetype = Bug AND status not in (Closed, Verified)'.format(summary)
         response = self._jira.jql(JQL)
         if len(response['issues']) > 0:

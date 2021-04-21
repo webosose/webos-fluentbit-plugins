@@ -30,7 +30,7 @@ class WebOSUploader:
             A.append(file)
         return A, B
 
-    def upload_files(self, key, upload_files, url='http://10.177.242.144:3002/upload'):
+    def upload_files(self, key, upload_files, url='http://10.178.84.116:3002/upload'):
         if len(upload_files) == 0:
             return []
 
