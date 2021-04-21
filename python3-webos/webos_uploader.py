@@ -4,6 +4,8 @@ import argparse
 import os
 import requests
 
+DEFAULT_SERVER = 'http://10.178.84.116:3002/upload'
+
 class WebOSUploader:
     _instance = None
 
@@ -30,7 +32,7 @@ class WebOSUploader:
             A.append(file)
         return A, B
 
-    def upload_files(self, key, upload_files, url='http://10.178.84.116:3002/upload'):
+    def upload_files(self, key, upload_files, url=DEFAULT_SERVER):
         if len(upload_files) == 0:
             return []
 
@@ -48,12 +50,13 @@ class WebOSUploader:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=os.path.basename(__file__))
-    parser.add_argument('--key',           type=str, help='jira key name (ex : PLAT-XXXXX)')
-    parser.add_argument('--url',           type=str, default='http://10.177.242.144:3002/upload', help='Simple File server)')
-    parser.add_argument('--upload-files',  type=str, nargs='*', help='Files for file server.')
+    parser.add_argument('--key',           type=str, help='jira key (ex : PLAT-XXXXX)')
+    parser.add_argument('--url',           type=str, default=DEFAULT_SERVER, help='File server URL')
+    parser.add_argument('--upload-files',  type=str, nargs='*', help='Files for uploading.')
 
     args = parser.parse_args()
 
+    print("WARNING: Recommend to use this with webos_issue.py. Uploaded files can be deleted based on status of jira ticket.")
     if args.key is None or args.url is None or args.upload_files is None:
         print("Required parameters are missing.")
         exit(1)

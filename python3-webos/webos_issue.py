@@ -2,20 +2,19 @@
 
 import argparse
 import os
-
-from pprint import pprint
-from atlassian import Jira
+import json
 
 import webos_common as common
 
+from atlassian import Jira
 from webos_common import NYX
 from webos_sysinfo import WebOSInfo
 from webos_uploader import WebOSUploader
 
 
 UNKNOWN = 'Unknown'
-DEFAULT_JOURNALD='/tmp/webos_journald.txt'
-DEFAULT_INFO='/tmp/webos_info.txt'
+DEFAULT_JOURNALD = '/tmp/webos_journald.txt'
+DEFAULT_SYSINFO = '/tmp/webos_info.txt'
 
 
 class WebOSIssue:
@@ -38,35 +37,13 @@ class WebOSIssue:
             password=common.get_value('account', 'pw'))
         return
 
-    def update_issue(self, key, summary=None, description=None, append_description=False):
-        if summary is None and description is None:
-            return True
-
-        fields = {}
-        if append_description:
-            if description is None:
-                common.error("'description' is required")
-                return
-            description = self._jira.issue_field_value(key, 'description') + '\n' + description
-
-        if summary is not None:
-            fields['summary'] = summary
-        if description is not None:
-            fields['description'] = description
-
-        try:
-            self._jira.update_issue_field(key, fields)
-            return True
-        except:
-            return False
-
     def create_issue(self, summary=None, description=None, unique_summary=False, component=UNKNOWN):
         if summary is None and description is None:
             return None
 
         fields = {
-            "project":{
-                "key":"PLAT"
+            "project": {
+                "key": "PLAT"
             },
             "customfield_10101": NYX.instance().get_info()['webos_build_id'],
             "customfield_10400": [
@@ -74,12 +51,7 @@ class WebOSIssue:
                     "value": NYX.instance().get_device_name(),
                 }
             ],
-            "components": [
-                {
-                    "name": component
-                }
-            ],
-            "labels":[
+            "labels": [
                 "Link-RDX-Server"
             ],
             "issuetype": {
@@ -90,6 +62,13 @@ class WebOSIssue:
             fields['summary'] = summary
         if description is not None:
             fields['description'] = description
+        if component != UNKNOWN:
+            components = common.get_value('customfield', 'components')
+            if component not in components:
+                component = UNKNOWN
+            fields['components'] = [
+                { "name": component }
+            ]
 
         if unique_summary:
             if summary is None:
@@ -99,6 +78,22 @@ class WebOSIssue:
                 common.info("'{}' is already created".format(summary))
                 return None
         return self._jira.issue_create(fields)
+
+    def update_issue(self, key, summary=None, description=None):
+        if summary is None and description is None:
+            return True
+
+        fields = {}
+        if summary is not None:
+            fields['summary'] = summary
+        if description is not None:
+            fields['description'] = description
+
+        try:
+            self._jira.update_issue_field(key, fields)
+            return True
+        except:
+            return False
 
     def check_summary(self, summary):
         summary = summary.replace("[","\\\\[")
@@ -118,6 +113,7 @@ class WebOSIssue:
                 common.error("'{}' doesn't exist".format(file))
                 continue
             self._jira.add_attachment(key, file)
+            common.info("'{}' is attached".format(file))
         return
 
     def upload_files(self, key, files):
@@ -127,10 +123,18 @@ class WebOSIssue:
         true_files, false_files = WebOSUploader.instance().exists(files)
         server_files = WebOSUploader.instance().upload_files(key, true_files)
 
-        comment = "==== AUTO GENERATED SYSTEM INFO ====\n\n"
+        comment = "##@@## RDX File Server Links @@##@@\n\n"
         for i, file in enumerate(true_files):
-            comment += "[{}|{}]\n".format(os.path.basename(file), server_files[i])
+            desc = "WEB_URL"
+            if file == DEFAULT_JOURNALD:
+                desc = "SYS_LOG"
+            elif file == DEFAULT_SYSINFO:
+                desc = "SYS_INFO"
+            elif file.startswith("core"):
+                desc = "COREDUMP"
+            comment += "{} : [{}|{}]\n".format(desc, os.path.basename(file), server_files[i])
         self.add_comment(key, comment)
+        common.info("All files are uploaded")
 
     def add_comment(self, key, comment):
         self._jira.issue_add_comment(key, comment)
@@ -144,23 +148,43 @@ class WebOSIssue:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=os.path.basename(__file__))
-    parser.add_argument('--id',                 type=str, help='jira id')
-    parser.add_argument('--pw',                 type=str, help='jira pw')
-    parser.add_argument('--key',                type=str, help='jira key name (ex : PLAT-XXXXX)')
+    parser.add_argument('--id',               type=str, help='jira id')
+    parser.add_argument('--pw',               type=str, help='jira pw')
 
-    parser.add_argument('--summary',            type=str, help='jira summary text (ex : Crash application manager ...)')
-    parser.add_argument('--unique-summary',     action='store_true', help='Create ticket only if it is a unique summary')
-    parser.add_argument('--description',        type=str, help='jira description')
-    parser.add_argument('--append-description', action='store_true', help='Enable appendmode.')
-    parser.add_argument('--component',          type=str, default=UNKNOWN, help='jira component')
-    parser.add_argument('--comment',            type=str, help='jira comment')
+    parser.add_argument('--key',              type=str, help='jira key')
+    parser.add_argument('--summary',          type=str, help='jira summary')
+    parser.add_argument('--description',      type=str, help='jira description')
+    parser.add_argument('--component',        type=str, help='jira component')
+    parser.add_argument('--comment',          type=str, help='jira comment')
 
-    parser.add_argument('--attach-files',       type=str, nargs='*', help='Files for jira attachements')
-    parser.add_argument('--upload-files',       type=str, nargs='*', help='Files for file server. The URLs are added to description')
+    parser.add_argument('--attach-files',     type=str, nargs='*', help='All files are attached into jira ticket')
+    parser.add_argument('--upload-files',     type=str, nargs='*', help='All files are uploaded into file server')
 
-    parser.add_argument('--without-info',       action='store_true', help='Disable uploading system information')
+    parser.add_argument('--unique-summary',   action='store_true', help='Create issue only if it is unique summary')
+    parser.add_argument('--without-sysinfo',  action='store_true', help='Disable uploading system information')
+    parser.add_argument('--show-id',          action='store_true', help='Show ID and PASS')
+    parser.add_argument('--show-component',   action='store_true', help='Show all components')
+    parser.add_argument('--show-devicename',  action='store_true', help='Show all supported devices')
 
     args = parser.parse_args()
+
+    # handle 'show' commands
+    if args.show_id:
+        id = common.get_value('account', 'id')
+        pw = common.get_value('account', 'pw')
+        print('ID : {}'.format(id))
+        print('PW : {}'.format(pw))
+        exit(1)
+
+    if args.show_component:
+        result = common.get_value('customfield', 'components')
+        print(json.dumps(result, indent=4, sort_keys=True))
+        exit(1)
+
+    if args.show_devicename:
+        result = common.get_value('deviceName')
+        print(json.dumps(result, indent=4, sort_keys=True))
+        exit(1)
 
     # handle 'id' and 'pw' first
     if args.id is not None or args.pw is not None:
@@ -178,7 +202,7 @@ if __name__ == "__main__":
 
     if key is not None:
         # handle 'UPDATE' mode
-        result = WebOSIssue.instance().update_issue(args.key, args.summary, args.description, args.append_description)
+        result = WebOSIssue.instance().update_issue(args.key, args.summary, args.description)
         if result is False:
             common.error("Failed to update '{}'".format(args.key))
             exit(1)
@@ -191,12 +215,12 @@ if __name__ == "__main__":
         key = result['key']
         common.info("'{}' is created".format(key))
 
-        if args.without_info is False:
+        if args.without_sysinfo is False:
             WebOSInfo.instance().capture_journald(DEFAULT_JOURNALD)
             WebOSInfo.instance().capture_info()
 
             upload_files.append(DEFAULT_JOURNALD)
-            upload_files.append(DEFAULT_INFO)
+            upload_files.append(DEFAULT_SYSINFO)
     else:
         common.info("'key' or 'summary' is needed")
         exit(1)

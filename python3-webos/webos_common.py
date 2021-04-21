@@ -7,92 +7,6 @@ import json
 from sys import stdout
 
 
-class NYX:
-    _instance = None
-
-    @classmethod
-    def _getInstance(cls):
-        return cls._instance
-
-    @classmethod
-    def instance(cls, *args, **kargs):
-        cls._instance = cls(*args, **kargs)
-        cls.instance = cls._getInstance
-        return cls._instance
-
-    def __init__(self):
-        self.info = {}
-        self.info['serial_number']     = self.query('DeviceInfo', 'serial_number')
-        self.info['product_id']        = self.query('DeviceInfo', 'product_id')
-        self.info['hardware_revision'] = self.query('DeviceInfo', 'hardware_revision')
-        self.info['nduid']             = self.query('DeviceInfo', 'nduid')
-        self.info['device_name']       = self.query('DeviceInfo', 'device_name')
-        self.info['webos_build_id']    = self.query('OSInfo', 'webos_build_id')
-        self.info['webos_imagename']   = self.query('OSInfo', 'webos_imagename')
-        self.info['webos_release']     = self.query('OSInfo', 'webos_release')
-
-    def query(self, category, name):
-        try:
-            result = subprocess.check_output(['nyx-cmd', category, 'query', name], stderr=subprocess.DEVNULL)
-            result = result.decode("utf-8").rstrip()
-            return result
-        except:
-            return '<unknown>'
-
-    def get_info(self):
-        return self.info
-
-    def get_device_name(self):
-        if self.info['device_name'] == "raspberrypi4":
-            return "OSE-RPi4"
-        else:
-            return None
-
-    def print(self):
-        print('serial_number: {}'.format(self.info['serial_number']))
-        print('product_id: {}'.format(self.info['product_id']))
-        print('hardware_revision: {}'.format(self.info['hardware_revision']))
-        print('nduid: {}'.format(self.info['nduid']))
-        print('device_name: {}'.format(self.info['device_name']))
-        print('webos_build_id: {}'.format(self.info['webos_build_id']))
-        print('webos_imagename: {}'.format(self.info['webos_imagename']))
-        print('webos_release: {}'.format(self.info['webos_release']))
-
-
-class Platform:
-    _instance = None
-
-    @classmethod
-    def _getInstance(cls):
-        return cls._instance
-
-    @classmethod
-    def instance(cls, *args, **kargs):
-        cls._instance = cls(*args, **kargs)
-        cls.instance = cls._getInstance
-        return cls._instance
-
-    def __init__(self):
-        return
-
-    def execute(self, command):
-        result = None
-        try:
-            result = subprocess.check_output(command, shell=True, stderr=subprocess.DEVNULL, encoding='utf-8')
-        except:
-            result = 'Failed to execute the command'
-        return result
-
-    def cat(self, file):
-        result = None
-        try:
-            result = subprocess.check_output('cat {}'.format(file), shell=True, stderr=subprocess.DEVNULL, encoding='utf-8')
-        except:
-            result = 'Failed to read the file'
-        return result
-
-
-
 ####### CONFIG #######
 
 
@@ -134,7 +48,9 @@ update_configs('/etc/webos_config_1.json')
 update_configs('/etc/webos_config_2.json')
 rw_configs = update_configs('/var/luna/preferences/webos_rdx.json')
 
-def get_value(first_key, second_key):
+def get_value(first_key, second_key=None):
+    if second_key is None:
+        return mm_configs[first_key]
     return mm_configs[first_key][second_key]
 
 def set_value(first_key, second_key, value):
@@ -152,7 +68,7 @@ if __name__ == "__main__":
 
 
 
-####### logger #######
+####### LOGGER #######
 
 
 def timestamp(message):
@@ -175,3 +91,97 @@ def info(message, force=False):
 
 def error(message):
     log('ERROR', message)
+
+
+####### NYX #######
+
+
+class NYX:
+    _instance = None
+
+    @classmethod
+    def _getInstance(cls):
+        return cls._instance
+
+    @classmethod
+    def instance(cls, *args, **kargs):
+        cls._instance = cls(*args, **kargs)
+        cls.instance = cls._getInstance
+        return cls._instance
+
+    def __init__(self):
+        self.info = {}
+        self.info['serial_number']     = self.query('DeviceInfo', 'serial_number')
+        self.info['product_id']        = self.query('DeviceInfo', 'product_id')
+        self.info['hardware_revision'] = self.query('DeviceInfo', 'hardware_revision')
+        self.info['nduid']             = self.query('DeviceInfo', 'nduid')
+        self.info['device_name']       = self.query('DeviceInfo', 'device_name')
+        self.info['webos_build_id']    = self.query('OSInfo', 'webos_build_id')
+        self.info['webos_imagename']   = self.query('OSInfo', 'webos_imagename')
+        self.info['webos_release']     = self.query('OSInfo', 'webos_release')
+
+    def query(self, category, name):
+        try:
+            result = subprocess.check_output(['nyx-cmd', category, 'query', name], stderr=subprocess.DEVNULL)
+            result = result.decode("utf-8").rstrip()
+            return result
+        except:
+            return '<unknown>'
+
+    def get_info(self):
+        return self.info
+
+    def get_device_name(self):
+        device_names = get_value('deviceName')
+        name = self.info['device_name']
+
+        if name in device_names:
+            return device_names[name]
+        else:
+            return None
+
+    def print(self):
+        print('serial_number: {}'.format(self.info['serial_number']))
+        print('product_id: {}'.format(self.info['product_id']))
+        print('hardware_revision: {}'.format(self.info['hardware_revision']))
+        print('nduid: {}'.format(self.info['nduid']))
+        print('device_name: {}'.format(self.info['device_name']))
+        print('webos_build_id: {}'.format(self.info['webos_build_id']))
+        print('webos_imagename: {}'.format(self.info['webos_imagename']))
+        print('webos_release: {}'.format(self.info['webos_release']))
+
+
+####### Platform #######
+
+
+class Platform:
+    _instance = None
+
+    @classmethod
+    def _getInstance(cls):
+        return cls._instance
+
+    @classmethod
+    def instance(cls, *args, **kargs):
+        cls._instance = cls(*args, **kargs)
+        cls.instance = cls._getInstance
+        return cls._instance
+
+    def __init__(self):
+        return
+
+    def execute(self, command):
+        result = None
+        try:
+            result = subprocess.check_output(command, shell=True, stderr=subprocess.DEVNULL, encoding='utf-8')
+        except:
+            result = 'Failed to execute the command'
+        return result
+
+    def cat(self, file):
+        result = None
+        try:
+            result = subprocess.check_output('cat {}'.format(file), shell=True, stderr=subprocess.DEVNULL, encoding='utf-8')
+        except:
+            result = 'Failed to read the file'
+        return result

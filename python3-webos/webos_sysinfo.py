@@ -59,6 +59,7 @@ class WebOSInfo:
     def capture_journald(self, file=DEFAULT_JOURNALD):
         command =  'journalctl > {}'.format(file)
         subprocess.check_output(command, shell=True, encoding='utf-8')
+        print('Capture Journald : {}'.format(file))
         return
 
     def capture_info(self, file=DEFAULT_INFO):
@@ -69,10 +70,11 @@ class WebOSInfo:
             result = Platform.instance().execute(command)
             WebOSInfo.instance().write(command, result)
 
-        for file in common.get_value('platform', 'files'):
-            result = Platform.instance().cat(file)
-            WebOSInfo.instance().write(file, result)
+        for f in common.get_value('platform', 'files'):
+            result = Platform.instance().cat(f)
+            WebOSInfo.instance().write(f, result)
         WebOSInfo.instance().close()
+        print('Capture sysinfo : {}'.format(file))
         return
 
 
