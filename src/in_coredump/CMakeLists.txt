@@ -1,13 +1,27 @@
-# FIXME: there is something wrong when linking objects and this
-# static plugin, I should not require to link to a specific symbol
-# if the object was already linked from fluent-bit core on src/, also
-# jsmn should not be required.
+# @@@LICENSE
+#
+#      Copyright (c) 2021 LG Electronics, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# LICENSE@@@
 
-webos_distro_variant_dep()
-webos_configure_source_files(cfg ${CMAKE_CURRENT_SOURCE_DIR}/Environment.h) 
+webos_configure_source_files(cfg ${CMAKE_CURRENT_SOURCE_DIR}/Environment.h)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${PROJECT_BINARY_DIR}/Configured/src/in_coredump)
 
 set(src
-  in_coredump.c
-  )
+    in_coredump.c
+)
 
 FLB_PLUGIN(in_coredump "${src}" "")

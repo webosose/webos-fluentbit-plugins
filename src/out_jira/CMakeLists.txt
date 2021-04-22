@@ -1,15 +1,29 @@
+# @@@LICENSE
+#
+#      Copyright (c) 2021 LG Electronics, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# LICENSE@@@
+
+include(FindPkgConfig)
+
+pkg_check_modules(JSON REQUIRED json-c)
+include_directories(${JSON_INCLUDE_DIRS})
+webos_add_compiler_flags(ALL ${JSON_CFLAGS_OTHER})
+
 set(src
-  jira.c)
+    jira.c
+)
 
-#set(Python_ADDITIONAL_VERSIONS 2)
-find_package(PythonLibs REQUIRED)
-#find_package (Python3 COMPONENTS Interpreter Development)
-include_directories(${PYTHON_INCLUDE_DIRS})
-
-message("Python_FOUND:${Python_FOUND}")
-message("Python_VERSION:${Python_VERSION}")
-message("Python_Development_FOUND:${Python_Development_FOUND}")
-message("Python_LIBRARIES:${PYTHON_LIBRARIES}")
-
-FLB_PLUGIN(out_jira "${src}" ${PYTHON_LIBRARIES})
-#FLB_PLUGIN(out_jira "${src}" "")
+FLB_PLUGIN(out_jira "${src}" ${JSON_LDFLAGS})

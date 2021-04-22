@@ -1,22 +1,18 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-
-/*  Fluent Bit
- *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
- *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- */
+// Copyright (c) 2021 LG Electronics, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
 
 #include <fluent-bit/flb_info.h>
 
@@ -39,243 +35,260 @@
 #include <sys/inotify.h>
 #include <limits.h>
 
-//#include "Environment.h"
 #include "in_coredump.h"
 
-#define COREDUMP_PATH "/var/lib/systemd/coredump"
-#define COMPONENT_KEY "component"
-#define PID_KEY		  "pid"
+#define PATH_COREDUMP_DIRECTORY "/var/lib/systemd/coredump"
 
-#define UPLOAD_FILE_KEY "upload-files"
-#define SUMMARY_KEY		  "summary"
-#define SUMMARY_MAX    10240
+#define DEFAULT_SCRIPT          "webos_capture.py"
 
-static int in_coredump_collect(struct flb_input_instance *i_ins,
-                            struct flb_config *config, void *in_context)
+#define KEY_SUMMARY		        "summary"
+#define KEY_UPLOAD_FILES        "upload-files"
+
+#define STR_LEN                 1024
+
+static int parse_coredump_comm(const char *full, const char *comm, const char *pid)
+{
+    // template : core string | comm | uid | boot id | pid | timestamp
+    // example  : core.coreexam.0.5999de4a29fb442eb75fb52f8eb64d20.1476.1615253999000000.xz
+
+    int cnt = 0;
+    char *ptr = strtok(full, ".");
+
+    if (strncmp(full, "core", 4) != 0) {
+        flb_error("[in_coredump][%s] Not coredump file : %s", __FUNCTION__, full);
+        return -1;
+    }
+
+    while (ptr != NULL)
+    {
+        if (cnt == 1) {
+            strncpy(comm, ptr, strlen(ptr)+1);
+        } else if (cnt == 4) {
+            strncpy(pid, ptr, strlen(ptr)+1);
+            break;
+        }
+
+        ptr = strtok(NULL, ".");
+        cnt++;
+    }
+
+    return 0;
+}
+
+static int create_crashreport(const char *script, const char *file, const char *crashreport)
+{
+    // file : /var/lib/systemd/coredump/core.coreexam_ose.0.c7294e397ec747f98552c7c459f7dc1c.2434.1619053570000000.xz
+    // crashreport : /var/log/crashreport_comm.pid.log
+    // command : webos_capture.py --coredump file crashreport
+
+    char command[STR_LEN];
+    sprintf(command, "%s --coredump %s %s", script, file, crashreport);
+    flb_info("[in_coredump][%s] command : %s", __FUNCTION__, command);
+
+    system(command);
+
+    return 0;
+}
+
+static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
     int bytes = 0;
-    int pack_size;
     int ret;
-    char *pack;
     struct flb_in_coredump_config *ctx = in_context;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
 
-    flb_debug("[in_coredump] wait for inotify events  ");
-    bytes = read(ctx->fd,
-                 ctx->buf + ctx->buf_len,
-                 sizeof(ctx->buf) - ctx->buf_len - 1);
-   
-    flb_debug("[in_coredump] some inotify events  ");
-    if (bytes == 0) {
-        flb_warn("[in_coredump] end of file (coredump closed by remote end)");
-    }
+    struct inotify_event *event;
+
+    char full_path[STR_LEN];
+    char comm[STR_LEN];
+    char pid[STR_LEN];
+    char corefile[STR_LEN];
+    char crashreport[STR_LEN];
+    char upload_files[STR_LEN];
+    char summary[STR_LEN];
+    int len;
+
+    bytes = read(ctx->fd, ctx->buf + ctx->buf_len, sizeof(ctx->buf) - ctx->buf_len - 1);
+
     if (bytes <= 0) {
-        flb_input_collector_pause(ctx->coll_fd, ctx->i_in);
+        flb_error("[in_coredump][%s] Failed to read data", __FUNCTION__);
+        flb_input_collector_pause(ctx->coll_fd, ctx->ins);
         flb_engine_exit(config);
         return -1;
     }
-    flb_debug("[in_coredump] some filed changed  ");
+
     ctx->buf_start = ctx->buf_len;
     ctx->buf_len += bytes;
     ctx->buf[ctx->buf_len] = '\0';
+
+    flb_info("[in_coredump][%s] Catch the new coredump event", __FUNCTION__);
 
     /* Initialize local msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    while (ctx->buf_len > ctx->buf_start) {
-       struct inotify_event *event=(struct inotify_event*) &ctx->buf[ctx->buf_start];
-       if (event->len) {
-           if ((event->mask & IN_CREATE) && !(event->mask & IN_ISDIR) ) {
-               char *result;
-               char component_name[PATH_MAX];
-               char upload_files[PATH_MAX];
-               char summary[SUMMARY_MAX];
-               char pid[PATH_MAX];
-               struct flb_time tm;
-               int len;
+    while (ctx->buf_start < ctx->buf_len) {
+        event=(struct inotify_event*) &ctx->buf[ctx->buf_start];
 
-               flb_debug("[in_coredump] File %s was created!!", event->name);
+        if (event->len == 0) {
+            flb_error("[in_coredump][%s] event length is 0", __FUNCTION__);
+            break;
+        }
 
-               // filename  core.coreexam.0.5999de4a29fb442eb75fb52f8eb64d20.1476.1615253999000000.xz
-               result=strtok(event->name, ".");
+        if (!(event->mask & IN_CREATE)) {
+            flb_error("[in_coredump][%s] not create event : %s", __FUNCTION__, event->name);
+            break;
+        }
 
-               snprintf(upload_files, PATH_MAX, "%s/%s", ctx->path, event->name)
-               snprintf(component_name, PATH_MAX, "%s", result);
+        snprintf(full_path, STR_LEN, "%s/%s", ctx->path, event->name);
+        flb_info("[in_coredump][%s] coredump file is created : (%s)", __FUNCTION__, full_path);
+        strncpy(corefile, event->name, strlen(event->name));
 
-               if (strcmp(component_name, "core") == 0) {
-                   while(result != NULL) {  //remain coreexam.0.5999de4a29fb442eb75fb52f8eb64d20.1476.1615253999000000.xz
-                       // key - value
-                       // component name -> token1
-                       // process id -> token2
-                       result=strtok(NULL,".");
-                       if (result != NULL)  { //component name, remain 0.5999de4a29fb442eb75fb52f8eb64d20.1476.1615253999000000.xz
-						   strcpy(component_name,result);
-                          
-                           result=strtok(NULL, ".");
-                           if (result != NULL) { // unknown 0, remain 5999de4a29fb442eb75fb52f8eb64d20.1476.1615253999000000.xz
-                               result=strtok(NULL, ".");
-                               if (result != NULL) { // unkown 5999de4a29fb442eb75fb52f8eb64d20, remain 1476.1615253999000000.xz
-                                   result = strtok(NULL, ".");
-                                   if (result != NULL) { // pid 1476 remain 1615253999000000.xz
-                                       strcpy(pid, result);
-                                       msgpack_pack_array(&mp_pck, 2); // 2-> time / json value 
-                                       flb_pack_time_now(&mp_pck);
+        parse_coredump_comm(event->name, comm, pid);
+        flb_debug("[in_coredump][%s] comm : %s, pid : %s", __FUNCTION__, comm, pid);
 
-                                       /* component key, pid */
-                                       msgpack_pack_map(&mp_pck, 2); 
+        sprintf(crashreport, "/var/log/crashreport_%s.%s.log", comm, pid);
+        create_crashreport(ctx->crashreport_script, corefile, crashreport);
 
-#if 0
-                                       /* key - component name */
-                                       msgpack_pack_str(&mp_pck,len=strlen(COMPONENT_KEY));
-                                       msgpack_pack_str_body(&mp_pck, COMPONENT_KEY, len);
-                                       flb_debug("[in_coredump] %s len %d was created!!", COMPONENT_KEY, len);
+        if (access(crashreport, F_OK) != 0) {
+            flb_error("[in_coredump][%s] failed to create crashreport : %s", __FUNCTION__, crashreport);
+            break;
+        }
+        flb_info("[in_coredump][%s] crashreport file is created : %s)", __FUNCTION__, crashreport);
 
-                                       /* value - component name */
-                                       msgpack_pack_str(&mp_pck,len=strlen(component_name));
-                                       msgpack_pack_str_body(&mp_pck, component_name, len);
-                                       flb_debug("[in_coredump] compoent_name %s len %d was created!!", component_name, len);
+        snprintf(upload_files, STR_LEN, "%s %s", full_path, crashreport);
 
-                                       /* key - process id */
-                                       msgpack_pack_str(&mp_pck,len=strlen(PID_KEY));
-                                       msgpack_pack_str_body(&mp_pck, PID_KEY, len);
-                                       flb_debug("[in_coredump] pid %s len %d was created!!", PID_KEY, len);
+        msgpack_pack_array(&mp_pck, 2); // time | value
+        flb_pack_time_now(&mp_pck);
 
-                                       /* value - process id */
-                                       msgpack_pack_str(&mp_pck,len=strlen(pid));
-                                       msgpack_pack_str_body(&mp_pck, pid, len);
-                                       flb_debug("[in_coredump] pid %s len %d was created!!", pid, len);
-#else
-                                       /* key - upload-files */
-                                       msgpack_pack_str(&mp_pck, len=strlen(UPLOAD_FILE_KEY)
-                                       msgpack_pack_str_body(&mp_pck, UPLOAD_FILE_KEY, len);
+        // 2 pairs
+        msgpack_pack_map(&mp_pck, 2);
 
-                                       /* value - path */
-                                       //msgpack_array(&mp_pck, 1); 
-                                       msgpack_pack_str(&mp_pck, len=strlen(upload_files));
-                                       msgpack_pack_str_body(&mp_pck, upload_files, len);
-                                       flb_debug("[in_coredump] %s len %d was created!!", UPLOAD_FILE_KEY, len);
+        // key : upload-files | value : coredump file path & crashreport path
+        msgpack_pack_str(&mp_pck, len=strlen(KEY_UPLOAD_FILES));
+        msgpack_pack_str_body(&mp_pck, KEY_UPLOAD_FILES, len);
+        msgpack_pack_str(&mp_pck, len=strlen(upload_files));
+        msgpack_pack_str_body(&mp_pck, upload_files, len);
+        flb_info("[in_coredump][%s] Add msgpack - key (%s) : val (%s)", __FUNCTION__, KEY_UPLOAD_FILES, upload_files);
 
-                                       /* key - summary */
-                                       msgpack_pack_str(&mp_pck, len=strlen(SUMMARY_KEY));
-                                       msgpack_pack_str_body(&mp_pck, SUMMARY_KEY, len);
+        // key : summary | value : [RDX_CRASH][distro] comm
+        msgpack_pack_str(&mp_pck, len=strlen(KEY_SUMMARY));
+        msgpack_pack_str_body(&mp_pck, KEY_SUMMARY, len);
 
-                                       /* value - [CRASH] name */
-                                       snprintf(summary, SUMMARY_MAX, "[CRASH] %s_%s", WEBOS_TARGET_DISTRO, component_name)
+        snprintf(summary, STR_LEN, "[RDX_CRASH][%s] %s", WEBOS_TARGET_DISTRO, comm);
+        msgpack_pack_str(&mp_pck, len=strlen(summary));
+        msgpack_pack_str_body(&mp_pck, summary, len);
+        flb_info("[in_coredump][%s] Add msgpack - key (%s) : val (%s)", __FUNCTION__, KEY_SUMMARY, summary);
 
-                                       msgpack_pack_str(&mp_pck, len=strlen(summary));
-                                       msgpack_pack_str_body(&mp_pck, summary, len);
-                                       flb_debug("[in_coredump] %s len %d value was created!!", summary, len);
+        // flush to fluentbit
+        flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
 
-#endif
-                                       /* flush to fluentbit */
-                                       flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-                                   } else {
-                                       flb_warn("[in_coredump] It wasn't coredump file\n");
-                                   }
-                               } else {
-                                   flb_warn("[in_coredump] It wasn't coredump file\n");
-                               }
-                           } else {
-                               flb_warn("[in_coredump] It wasn't coredump file\n");
-                           }
-                       } else {
-                           flb_warn("[in_coredump] It wasn't coredump file\n");
-                       } 
-                   }
-               } else {
-                  flb_warn("[in_coredump] It wasn't coredump file\n");
-               }
-           } else {
-               // no file creation(another event)
-               flb_warn("[in_coredump] file %s: it was not created event!!", event->name);
-           }
-       }
-       ctx->buf_start += EVENT_SIZE + event->len;
-       
+        ctx->buf_start += EVENT_SIZE + event->len;
     }
-	ctx->buf_len=ctx->buf_start=0;
+
+    ctx->buf_len=ctx->buf_start=0;
     msgpack_sbuffer_destroy(&mp_sbuf);
-   
+
     return 0;
+}
+
+static void in_coredump_config_destroy(struct flb_in_coredump_config *ctx)
+{
+    if (!ctx)
+        return;
+
+    flb_free(ctx);
 }
 
 /* Initialize plugin */
-static int in_coredump_init(struct flb_input_instance *in,
-                         struct flb_config *config, void *data)
+static int in_coredump_init(struct flb_input_instance *in, struct flb_config *config, void *data)
 {
     int fd;
     int ret;
-    const char *tmp;
     struct flb_in_coredump_config *ctx;
     (void) data;
 
+    const char *pval = NULL;
+
     /* Allocate space for the configuration */
     ctx = flb_malloc(sizeof(struct flb_in_coredump_config));
-    if (!ctx) {
+    if (!ctx)
         return -1;
-    }
+
     ctx->buf_len = 0;
-    ctx->i_in = in;
+    ctx->ins = in;
 
     fd = inotify_init();
-    if ( fd < 0 ) {
-        flb_error("[in_coredump] can't do inotify_init");
+    if (fd < 0) {
+        flb_error("[in_coredump][%s] Failed to init inotify_init", __FUNCTION__);
+        goto init_error;
     }
+
     ctx->fd = fd;
     ctx->buf_start=0;
 
-    /* Config: path/pattern to read files */
-    tmp = flb_input_get_property("path", in);
-    if (tmp) {
-        ctx->path = tmp;
-        flb_debug("[in_coredump] requested monitoring path '%s' ", tmp);
-    }
-    else {
-        ctx->path = COREDUMP_PATH;
-    }
-    /* Always initialize built-in JSON pack state */
+    // Set the monitoring path for coredump file
+    pval = flb_input_get_property("path", in);
+    if (pval)
+        ctx->path = pval;
+    else
+        ctx->path = PATH_COREDUMP_DIRECTORY;
+    flb_info("[in_coredump][%s] Monitoring coredump file path : %s", __FUNCTION__, ctx->path);
+
+    // Set the crashreport script
+    pval = flb_input_get_property("script", in);
+    if (pval)
+        ctx->crashreport_script = pval;
+    else
+        ctx->crashreport_script = DEFAULT_SCRIPT;
+    flb_info("[in_coredump][%s] Crashreport script : %s", __FUNCTION__, ctx->crashreport_script);
+
+    // Always initialize built-in JSON pack state
     flb_pack_state_init(&ctx->pack_state);
     ctx->pack_state.multiple = FLB_TRUE;
 
-    /* Set the context */
-    flb_input_set_context(in, ctx);
+    // Set watch descriptor
+    ctx->wd = inotify_add_watch(ctx->fd, ctx->path, IN_CREATE);
 
-    flb_debug("[in_coredump] requested monitoring path '%s' ", ctx->path);
-    ctx->wd = inotify_add_watch( ctx->fd, ctx->path, IN_CREATE );
-
-    flb_debug("[in_coredump] initialize ");
-    /* Collect upon data available on the standard input */
-    ret = flb_input_set_collector_event(in,
-                                        in_coredump_collect,
-                                        ctx->fd,
-                                        config);
+    // Collect upon data available on the watch event
+    ret = flb_input_set_collector_event(in, in_coredump_collect, ctx->fd, config);
     if (ret == -1) {
-        flb_error("[in_coredump] Could not set collector for COREDUMP input plugin");
-        flb_free(ctx);
-        return -1;
+        flb_error("[in_coredump][%s] Failed to set collector_event", __FUNCTION__);
+        goto init_error;
     }
+
     ctx->coll_fd = ret;
 
+    // Set the context
+    flb_input_set_context(in, ctx);
+
+    flb_info("[in_coredump][%s] initialize done", __FUNCTION__);
+
     return 0;
+
+init_error:
+    in_coredump_config_destroy(ctx);
+    return -1;
 }
 
-/* Cleanup serial input */
 static int in_coredump_exit(void *in_context, struct flb_config *config)
 {
     struct flb_in_coredump_config *ctx = in_context;
 
+    if (!ctx)
+        return 0;
+
     if (ctx->fd >= 0) {
         close(ctx->fd);
     }
+
     flb_pack_state_reset(&ctx->pack_state);
-    flb_free(ctx);
+    in_coredump_config_destroy(ctx);
 
     return 0;
 }
 
-/* Plugin reference */
 struct flb_input_plugin in_coredump_plugin = {
     .name         = "coredump",
     .description  = "Coredump Collector",
