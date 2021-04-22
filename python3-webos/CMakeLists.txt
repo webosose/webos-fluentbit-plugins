@@ -1,6 +1,4 @@
-# @@@LICENSE
-#
-#      Copyright (c) 2021 LG Electronics, Inc.
+# Copyright (c) 2021 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,18 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# LICENSE@@@
+# SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 2.8.7)
-project(webos-fluentbit-plugins)
+install(PROGRAMS webos_capture.py DESTINATION bin)
+install(PROGRAMS webos_common.py DESTINATION bin)
+install(PROGRAMS webos_issue.py DESTINATION bin)
+install(PROGRAMS webos_uploader.py DESTINATION bin)
 
-include (webOS/webOS)
-webos_modules_init(1 6 3)
-webos_component(1 0 0)
-
-add_subdirectory(python3-webos)
-
-webos_include_install_paths()
-
-# install
-webos_build_system_bus_files()
+install(FILES webos_config_1.json DESTINATION /etc)

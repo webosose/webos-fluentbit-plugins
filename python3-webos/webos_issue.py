@@ -8,7 +8,7 @@ import webos_common as common
 
 from atlassian import Jira
 from webos_common import NYX
-from webos_sysinfo import WebOSInfo
+from webos_capture import WebOSCapture
 from webos_uploader import WebOSUploader
 
 
@@ -216,8 +216,8 @@ if __name__ == "__main__":
         common.info("'{}' is created".format(key))
 
         if args.without_sysinfo is False:
-            WebOSInfo.instance().capture_journald(DEFAULT_JOURNALD)
-            WebOSInfo.instance().capture_info()
+            WebOSCapture.instance().capture_journald(DEFAULT_JOURNALD)
+            WebOSCapture.instance().capture_sysinfo()
 
             upload_files.append(DEFAULT_JOURNALD)
             upload_files.append(DEFAULT_SYSINFO)
