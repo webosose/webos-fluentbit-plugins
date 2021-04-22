@@ -130,9 +130,13 @@ class WebOSIssue:
                 desc = "SYS_LOG"
             elif file == DEFAULT_SYSINFO:
                 desc = "SYS_INFO"
-            elif file.startswith("core"):
+
+            basename = os.path.basename(file)
+            if basename.startswith("core"):
                 desc = "COREDUMP"
-            comment += "{} : [{}|{}]\n".format(desc, os.path.basename(file), server_files[i])
+            elif basename.startswith("crashreport"):
+                desc = "CRASHREPORT"
+            comment += "{} : [{}|{}]\n".format(desc, basename, server_files[i])
         self.add_comment(key, comment)
         common.info("All files are uploaded")
 
