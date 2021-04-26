@@ -108,6 +108,10 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
     char upload_files[STR_LEN];
     char summary[STR_LEN];
     int len;
+    char distro_result[STR_LEN];
+
+    int cnt = 0;
+    int i;
 
     bytes = read(ctx->fd, ctx->buf + ctx->buf_len, sizeof(ctx->buf) - ctx->buf_len - 1);
 
@@ -117,6 +121,16 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         flb_engine_exit(config);
         return -1;
     }
+
+    for (i=0; i < strlen(WEBOS_TARGET_DISTRO); i++) {
+        if (*(WEBOS_TARGET_DISTRO+i) == '-')
+            continue;
+
+        distro_result[cnt++] = *(WEBOS_TARGET_DISTRO+i);
+    }
+    distro_result[cnt] = '\0';
+
+    flb_info("[in_coredump][%s] modified distro from (%s) to (%s)", __FUNCTION__, WEBOS_TARGET_DISTRO, distro_result);
 
     ctx->buf_start = ctx->buf_len;
     ctx->buf_len += bytes;
@@ -158,6 +172,9 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         flb_info("[in_coredump][%s] crashreport file is created : %s)", __FUNCTION__, crashreport);
 
         snprintf(upload_files, STR_LEN, "%s %s", full_path, crashreport);
+
+        // Wait closeing time for coredump file
+        sleep(1);
 
         msgpack_pack_array(&mp_pck, 2); // time | value
         flb_pack_time_now(&mp_pck);
