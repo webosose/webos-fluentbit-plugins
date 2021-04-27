@@ -193,7 +193,7 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         msgpack_pack_str(&mp_pck, len=strlen(KEY_SUMMARY));
         msgpack_pack_str_body(&mp_pck, KEY_SUMMARY, len);
 
-        snprintf(summary, STR_LEN, "[RDX_CRASH][%s] %s", WEBOS_TARGET_DISTRO, comm);
+        snprintf(summary, STR_LEN, "[RDX_CRASH][%s] %s", distro_result, comm);
         msgpack_pack_str(&mp_pck, len=strlen(summary));
         msgpack_pack_str_body(&mp_pck, summary, len);
         flb_info("[in_coredump][%s] Add msgpack - key (%s) : val (%s)", __FUNCTION__, KEY_SUMMARY, summary);
