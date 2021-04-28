@@ -79,8 +79,9 @@ class WebOSCapture:
         return
 
     def capture_coredump(self, in_file, out_file=DEFAULT_DUMP):
-        # example name : /var/lib/systemd/coredump/core.coreexam_ose.0.c7294e397ec747f98552c7c459f7dc1c.2434.1619053570000000.xz
-        pid = os.path.basename(in_file).split('.')[4]
+        # example name#1 : coredump/core.coreexam_ose.0.c7294e397ec747f98552c7c459f7dc1c.2434.1619053570000000.xz
+        # example name#2 : core.com\x2ewebos\x2eservi.0.570dc828a3934019bdcd9317dfe1d0e2.613.1619578312000000.xz
+        pid = os.path.basename(in_file).split('.')[-3]
         command = 'journalctl -t systemd-coredump | grep {}'.format(pid)
 
         print('COMMAND: {}'.format(command))

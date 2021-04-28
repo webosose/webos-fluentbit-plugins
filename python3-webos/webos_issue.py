@@ -12,7 +12,7 @@ from webos_capture import WebOSCapture
 from webos_uploader import WebOSUploader
 
 
-UNKNOWN = 'Unknown'
+UNKNOWN = 'Temp'
 DEFAULT_JOURNALD = '/tmp/webos_journald.txt'
 DEFAULT_SYSINFO = '/tmp/webos_info.txt'
 
