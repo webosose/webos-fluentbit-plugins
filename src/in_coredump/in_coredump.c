@@ -28,11 +28,13 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 
 #include <sys/inotify.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/xattr.h>
+
+#include <fcntl.h>
 #include <limits.h>
 
 #include "in_coredump.h"
@@ -51,25 +53,96 @@ static int parse_coredump_comm(const char *full, const char *comm, const char *p
     // template : core string | comm | uid | boot id | pid | timestamp
     // example  : core.coreexam.0.5999de4a29fb442eb75fb52f8eb64d20.1476.1615253999000000.xz
 
-    int cnt = 0;
-    char *ptr = strtok(full, ".");
+    ssize_t buflen, keylen, vallen;
+    char exe[STR_LEN];
+    char *buf, *key, *val;
 
-    if (strncmp(full, "core", 4) != 0) {
-        flb_error("[in_coredump][%s] Not coredump file : %s", __FUNCTION__, full);
+    flb_info("[in_coredump][%s] full param : (%s)", __FUNCTION__, full);
+
+    // Determine the length of the buffer needed.
+    buflen = listxattr(full, NULL, 0);
+    if (buflen == -1) {
+        flb_error("[in_coredump][%s] failed listxattr", __FUNCTION__);
+        return -1;
+    }
+    if (buflen == 0) {
+        flb_error("[in_coredump][%s] no attributes", __FUNCTION__);
         return -1;
     }
 
-    while (ptr != NULL)
-    {
-        if (cnt == 1) {
-            strncpy(comm, ptr, strlen(ptr)+1);
-        } else if (cnt == 4) {
-            strncpy(pid, ptr, strlen(ptr)+1);
-            break;
+    // Allocate the buffer.
+    buf = malloc(buflen);
+    if (buf == NULL) {
+        flb_error("[in_coredump][%s] failed malloc", __FUNCTION__);
+        return -1;
+    }
+
+    // Copy the list of attribute keys to the buffer
+    buflen = listxattr(full, buf, buflen);
+    flb_debug("[in_coredump][%s] buflen : (%d)", __FUNCTION__, buflen);
+
+    if (buflen == -1) {
+        return -1;
+    } else if (buflen == 0) {
+        flb_error("[in_coredump][%s] no attributes full : (%s)", __FUNCTION__, full);
+        return -1;
+    }
+
+    key = buf;
+    while (0 < buflen) {
+
+        // Output attribute key
+        flb_debug("[in_coredump][%s] key : (%s)", __FUNCTION__, key);
+
+        // Determine length of the value
+        vallen = getxattr(full, key, NULL, 0);
+
+        if (vallen == -1) {
+            flb_error("[in_coredump][%s] failed getxattr", __FUNCTION__);
+        } else if (vallen == 0) {
+            flb_error("[in_coredump][%s] no value", __FUNCTION__);
+        } else {
+            val = malloc(vallen + 1);
+            if (val == NULL) {
+                flb_error("[in_coredump][%s] failed malloc", __FUNCTION__);
+                return -1;
+            }
+
+            // Copy value to buffer
+            vallen = getxattr(full, key, val, vallen);
+            if (vallen == -1) {
+                flb_error("[in_coredump][%s] failed getxattr", __FUNCTION__);
+            } else {
+                // Check attribute value (exe, pid)
+                val[vallen] = 0;
+                flb_debug("[in_coredump][%s] val : (%s)", __FUNCTION__, val);
+                
+                if (strstr(key, "pid") != NULL)
+                    strcpy(pid, val);
+                if (strstr(key, "exe") != NULL)
+                    strcpy(exe, val);
+            }
+            free(val);
         }
 
-        ptr = strtok(NULL, ".");
-        cnt++;
+        // Forward to next attribute key.
+        keylen = strlen(key) + 1;
+        buflen -= keylen;
+        key += keylen;
+    }
+    free(buf);
+
+    flb_debug("[in_coredump][%s] exe : (%s), pid : (%s)", __FUNCTION__, exe, pid);
+
+    char *ptr = strtok(exe, "/");
+    while (ptr != NULL)
+    {
+        flb_debug("[in_coredump][%s] ptr : (%s)", __FUNCTION__, ptr);
+        if (strcmp(ptr, "usr") != 0 && strcmp(ptr, "bin") != 0 && strcmp(ptr, "sbin") != 0) {
+            strcpy(comm, ptr);
+            break;
+        }
+        ptr = strtok(NULL, "/");
     }
 
     return 0;
@@ -77,12 +150,12 @@ static int parse_coredump_comm(const char *full, const char *comm, const char *p
 
 static int create_crashreport(const char *script, const char *file, const char *crashreport)
 {
-    // file : /var/lib/systemd/coredump/core.coreexam_ose.0.c7294e397ec747f98552c7c459f7dc1c.2434.1619053570000000.xz
+    // file : core.coreexam_exampl.0.c7294e397ec747f98552c7c459f7dc1c.2434.1619053570000000.xz
     // crashreport : /var/log/crashreport_comm.pid.log
     // command : webos_capture.py --coredump file crashreport
 
     char command[STR_LEN];
-    sprintf(command, "%s --coredump %s %s", script, file, crashreport);
+    sprintf(command, "%s --coredump \'%s\' %s", script, file, crashreport);
     flb_info("[in_coredump][%s] command : %s", __FUNCTION__, command);
 
     system(command);
@@ -159,11 +232,11 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         flb_info("[in_coredump][%s] coredump file is created : (%s)", __FUNCTION__, full_path);
         strncpy(corefile, event->name, strlen(event->name));
 
-        parse_coredump_comm(event->name, comm, pid);
-        flb_debug("[in_coredump][%s] comm : %s, pid : %s", __FUNCTION__, comm, pid);
+        parse_coredump_comm(full_path, comm, pid);
+        flb_info("[in_coredump][%s] comm : (%s), pid : (%s)", __FUNCTION__, comm, pid);
 
         sprintf(crashreport, "/var/log/crashreport_%s.%s.log", comm, pid);
-        create_crashreport(ctx->crashreport_script, corefile, crashreport);
+        create_crashreport(ctx->crashreport_script, event->name, crashreport);
 
         if (access(crashreport, F_OK) != 0) {
             flb_error("[in_coredump][%s] failed to create crashreport : %s", __FUNCTION__, crashreport);
@@ -171,7 +244,7 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         }
         flb_info("[in_coredump][%s] crashreport file is created : %s)", __FUNCTION__, crashreport);
 
-        snprintf(upload_files, STR_LEN, "%s %s", full_path, crashreport);
+        snprintf(upload_files, STR_LEN, "\'%s\' %s", full_path, crashreport);
 
         // Wait closeing time for coredump file
         sleep(1);

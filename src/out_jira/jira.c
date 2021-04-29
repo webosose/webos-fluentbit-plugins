@@ -147,7 +147,7 @@ static void cb_jira_flush(const void *data,
     // template : command --summary XXX --unique-summary --upload-files YYY
     // example  : webos_issue.py --summary "[CRASH][OSE] bootd" --unique-summary --upload-files core.bootd.0.....xz
 
-    sprintf(command, "%s --summary \"%s\" --unique-summary --upload-files %s", ctx->jira_script, summary, upload_files);
+    sprintf(command, "%s --summary \'%s\' --unique-summary --upload-files %s", ctx->jira_script, summary, upload_files);
     flb_info("[out_jira][%s] command : %s", __FUNCTION__, command);
 
     system(command);
