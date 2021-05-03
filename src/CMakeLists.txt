@@ -50,3 +50,6 @@ add_subdirectory(${PLUGIN_NAME})
 
 set (PLUGIN_NAME  "out_jira")
 add_subdirectory(${PLUGIN_NAME})
+
+set (PLUGIN_NAME  "filter_webos_systemd")
+add_subdirectory(${PLUGIN_NAME})
