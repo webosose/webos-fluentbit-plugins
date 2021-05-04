@@ -33,5 +33,3 @@ add_subdirectory(plugins)
 file(GLOB fluent-bit_conf files/conf/*.conf)
 
 install(FILES ${fluent-bit_conf} DESTINATION ${WEBOS_INSTALL_SYSCONFDIR}/fluent-bit)
-
-webos_build_system_bus_files()
