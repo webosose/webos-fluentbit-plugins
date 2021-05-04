@@ -43,18 +43,18 @@
 
 #define DEFAULT_SCRIPT          "webos_capture.py"
 
-#define KEY_SUMMARY		        "summary"
+#define KEY_SUMMARY             "summary"
 #define KEY_UPLOAD_FILES        "upload-files"
 
 #define STR_LEN                 1024
 
-static int parse_coredump_comm(const char *full, const char *comm, const char *pid)
+static int parse_coredump_comm(const char *full, const char *comm, const char *pid, const char *exe)
 {
     // template : core string | comm | uid | boot id | pid | timestamp
     // example  : core.coreexam.0.5999de4a29fb442eb75fb52f8eb64d20.1476.1615253999000000.xz
 
     ssize_t buflen, keylen, vallen;
-    char exe[STR_LEN];
+    char exe_str[STR_LEN];
     char *buf, *key, *val;
 
     flb_info("[in_coredump][%s] full param : (%s)", __FUNCTION__, full);
@@ -132,9 +132,9 @@ static int parse_coredump_comm(const char *full, const char *comm, const char *p
     }
     free(buf);
 
-    flb_debug("[in_coredump][%s] exe : (%s), pid : (%s)", __FUNCTION__, exe, pid);
+    strcpy(exe_str, exe);
 
-    char *ptr = strtok(exe, "/");
+    char *ptr = strtok(exe_str, "/");
     while (ptr != NULL)
     {
         flb_debug("[in_coredump][%s] ptr : (%s)", __FUNCTION__, ptr);
@@ -176,6 +176,7 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
     char full_path[STR_LEN];
     char comm[STR_LEN];
     char pid[STR_LEN];
+    char exe[STR_LEN];
     char corefile[STR_LEN];
     char crashreport[STR_LEN];
     char upload_files[STR_LEN];
@@ -232,8 +233,8 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         flb_info("[in_coredump][%s] coredump file is created : (%s)", __FUNCTION__, full_path);
         strncpy(corefile, event->name, strlen(event->name));
 
-        parse_coredump_comm(full_path, comm, pid);
-        flb_info("[in_coredump][%s] comm : (%s), pid : (%s)", __FUNCTION__, comm, pid);
+        parse_coredump_comm(full_path, comm, pid, exe);
+        flb_info("[in_coredump][%s] comm : (%s), pid : (%s), exe (%s)", __FUNCTION__, comm, pid, exe);
 
         sprintf(crashreport, "/var/log/crashreport_%s.%s.log", comm, pid);
         create_crashreport(ctx->crashreport_script, event->name, crashreport);
@@ -266,7 +267,7 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         msgpack_pack_str(&mp_pck, len=strlen(KEY_SUMMARY));
         msgpack_pack_str_body(&mp_pck, KEY_SUMMARY, len);
 
-        snprintf(summary, STR_LEN, "[RDX_CRASH][%s] %s", distro_result, comm);
+        snprintf(summary, STR_LEN, "[RDX_CRASH][%s] %s", distro_result, exe);
         msgpack_pack_str(&mp_pck, len=strlen(summary));
         msgpack_pack_str_body(&mp_pck, summary, len);
         flb_info("[in_coredump][%s] Add msgpack - key (%s) : val (%s)", __FUNCTION__, KEY_SUMMARY, summary);
