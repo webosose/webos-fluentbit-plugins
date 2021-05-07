@@ -16,14 +16,12 @@
 #
 # LICENSE@@@
 
-pkg_check_modules(GLIB2 REQUIRED glib-2.0)
-include_directories(${GLIB2_INCLUDE_DIRS})
-
+webos_configure_source_files(cfg ${CMAKE_CURRENT_SOURCE_DIR}/Environment.h)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${PROJECT_BINARY_DIR}/Configured/plugins/in_coredump)
 
 set(src
-    webos_systemd.c
-    handler.cpp
+    in_coredump.c
 )
 
-FLB_PLUGIN(filter_webos_systemd "${src}" "-lglib-2.0")
+FLB_PLUGIN(in_coredump "${src}" "")

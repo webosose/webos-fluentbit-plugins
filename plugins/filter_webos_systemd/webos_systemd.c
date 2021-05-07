@@ -16,10 +16,6 @@
 
 #include <fluent-bit.h>
 
-extern int initHandler(struct flb_filter_instance *instance, struct flb_config *config, void *data);
-extern int exitHandler(void *data, struct flb_config *config);
-extern int filter(const void *data, size_t bytes, const char *tag, int tag_len, void **out_buf, size_t *out_size, struct flb_filter_instance *instance, void *context, struct flb_config *config);
-
 static int cb_webos_systemd_init(struct flb_filter_instance *instance, struct flb_config *config, void *data)
 {
     return initHandler(instance, config, data);

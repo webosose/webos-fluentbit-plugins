@@ -27,13 +27,11 @@ add_subdirectory(python3-webos)
 webos_include_install_paths()
 
 include(FindPkgConfig)
-add_subdirectory(src)
+add_subdirectory(plugins)
 
 # install
-file(GLOB fluent-bit_conf
-     files/conf/*.conf)
+file(GLOB fluent-bit_conf files/conf/*.conf)
 
-install(FILES ${fluent-bit_conf}
-        DESTINATION ${WEBOS_INSTALL_SYSCONFDIR}/fluent-bit)
+install(FILES ${fluent-bit_conf} DESTINATION ${WEBOS_INSTALL_SYSCONFDIR}/fluent-bit)
 
 webos_build_system_bus_files()
