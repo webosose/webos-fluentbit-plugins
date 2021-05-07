@@ -52,16 +52,19 @@ public:
     virtual ~Handler();
 
     int onInit(struct flb_filter_instance *instance, struct flb_config *config, void *data);
-    int onExit(void *data, struct flb_config *confi);
+    int onExit(void *context, struct flb_config *confi);
     int onFilter(const void *data, size_t bytes, const char *tag, int tag_len, void **out_buf, size_t *out_size, struct flb_filter_instance *instance, void *context, struct flb_config *config);
 
 private:
-    static msgpack_object* findInMap(msgpack_object* map, const char* keystr);
-    static string toDebugString(msgpack_object* map);
+    static msgpack_object* getValueObj(msgpack_object* map, const string& keystr);
+    static bool getValue(msgpack_object* map, const string& key, string& value);
+    static string convertUidToName(unsigned int uid);
+    static string convertUtcString(flb_time* time);
 
     Handler();
 
     void registerRegexAndHandler(const string& regex, MessageHandler handler);
+    bool packCommonMsg(msgpack_unpacked* result, msgpack_packer* packer);
 
     void onSetLifeStatus_Applaunch(smatch& match, msgpack_unpacked* result, msgpack_packer* packer);
     void onSetLifeStatus_ApplaunchPerf(smatch& match, msgpack_unpacked* result, msgpack_packer* packer);
@@ -72,15 +75,24 @@ private:
     static const string REGEX_ApiLaunchCall;
 
     static const string OUTKEY_TIMESTAMP;
+    static const string OUTKEY_DEVICE_INFO;
     static const string OUTKEY_DEVICE_ID;
-    static const string OUTKEY_HOSTNAME;
+    static const string OUTKEY_DEVICE_NAME;
+    static const string OUTKEY_WEBOS_NAME;
+    static const string OUTKEY_WEBOS_BUILD_ID;
     static const string OUTKEY_INFO_TYPE;
     static const string OUTKEY_APPLAUNCH;
     static const string OUTKEY_APPLAUNCH_PERF;
+    static const string OUTKEY_ACCOUNT_ID;
     static const string OUTKEY_APP_ID;
     static const string OUTKEY_ELAPSED_TIME;
 
     flb_filter_instance* m_filter_instance;
+
+    string m_deviceId;
+    string m_deviceName;
+    string m_webosName;
+    string m_webosBuildId;
 
     map<string, list<MessageHandler>> m_regex2handlers;
 

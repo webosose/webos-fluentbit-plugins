@@ -16,6 +16,9 @@
 #
 # LICENSE@@@
 
+pkg_check_modules(GLIB2 REQUIRED glib-2.0)
+include_directories(${GLIB2_INCLUDE_DIRS})
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 set(src
@@ -23,4 +26,4 @@ set(src
     handler.cpp
 )
 
-FLB_PLUGIN(filter_webos_systemd "${src}" "")
+FLB_PLUGIN(filter_webos_systemd "${src}" "-lglib-2.0")
