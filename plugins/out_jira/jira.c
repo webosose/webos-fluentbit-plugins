@@ -150,7 +150,7 @@ static void cb_jira_flush(const void *data,
     sprintf(command, "%s --summary \'%s\' --unique-summary --upload-files %s", ctx->jira_script, summary, upload_files);
     flb_info("[out_jira][%s] command : %s", __FUNCTION__, command);
 
-    system(command);
+    int ret = system(command);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }

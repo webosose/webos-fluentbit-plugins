@@ -15,7 +15,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <fluent-bit/flb_info.h>
-
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
@@ -28,29 +27,85 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#include <limits.h>
 
 #include <sys/inotify.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/xattr.h>
 
-#include <fcntl.h>
-#include <limits.h>
-
 #include "in_coredump.h"
 
 #define PATH_COREDUMP_DIRECTORY "/var/lib/systemd/coredump"
 
 #define DEFAULT_SCRIPT          "webos_capture.py"
+#define DEFAULT_TIME_FILE       "/lib/systemd/systemd"
 
 #define KEY_SUMMARY             "summary"
 #define KEY_UPLOAD_FILES        "upload-files"
 
 #define STR_LEN                 1024
 
-static int parse_coredump_comm(const char *full, const char *comm, const char *pid, const char *exe)
+struct time_information
 {
-    // template : core string | comm | uid | boot id | pid | timestamp
+    int modify_year;
+    int modify_mon;
+    int modify_mday;
+
+    int change_year;
+    int change_mon;
+    int change_mday;
+};
+
+struct time_information default_time;
+
+static int init_default_time()
+{
+    flb_info("[in_coredump][%s] init default time information (%s) file", __FUNCTION__, DEFAULT_TIME_FILE);
+
+    struct stat def_stat;
+
+    struct tm *def_tm_mtime;
+    struct tm *def_tm_ctime;
+
+    if (lstat(DEFAULT_TIME_FILE, &def_stat) == -1) {
+        flb_error("[in_coredump][%s] Failed lstat (%s)", __FUNCTION__, DEFAULT_TIME_FILE);
+        return -1;
+    }
+    def_tm_mtime = localtime(&def_stat.st_mtime);
+    def_tm_ctime = localtime(&def_stat.st_ctime);
+
+    default_time.modify_year = def_tm_mtime->tm_year + 1900;
+    default_time.modify_mon = def_tm_mtime->tm_mon + 1;
+    default_time.modify_mday = def_tm_mtime->tm_mday;
+    default_time.change_year = def_tm_ctime->tm_year + 1900;
+    default_time.change_mon = def_tm_ctime->tm_mon + 1;
+    default_time.change_mday = def_tm_ctime->tm_mday;
+
+    flb_info("[in_coredump][%s] Default time information mtime (%d-%d-%d), ctime (%d-%d-%d)", __FUNCTION__, \
+            default_time.modify_year, default_time.modify_mon, default_time.modify_mday, \
+            default_time.change_year, default_time.change_mon, default_time.change_mday);
+
+    return 0;
+}
+
+static int verify_coredump_file(const char *corefile)
+{
+    int len = strlen(corefile);
+
+    if (strncmp(corefile, "core", 4) != 0)
+        return -1;
+
+    if (corefile[len-3] != '.' && corefile[len-2] && 'x' && corefile[len-1] && 'z')
+        return -1;
+
+    return 0;
+}
+
+static int parse_coredump_comm(const char *full, char *comm, char *pid, char *exe)
+{
+    // template : core | comm | uid | boot id | pid | timestamp
     // example  : core.coreexam.0.5999de4a29fb442eb75fb52f8eb64d20.1476.1615253999000000.xz
 
     ssize_t buflen, keylen, vallen;
@@ -148,17 +203,56 @@ static int parse_coredump_comm(const char *full, const char *comm, const char *p
     return 0;
 }
 
-static int create_crashreport(const char *script, const char *file, const char *crashreport)
+static int check_exe_time(const char *exe)
 {
-    // file : core.coreexam_exampl.0.c7294e397ec747f98552c7c459f7dc1c.2434.1619053570000000.xz
-    // crashreport : /var/log/crashreport_comm.pid.log
-    // command : webos_capture.py --coredump file crashreport
+    flb_info("[in_coredump][%s] check exe (%s) file", __FUNCTION__, exe);
+
+    struct stat exe_stat;
+
+    struct tm *exe_tm_mtime;
+    struct tm *exe_tm_ctime;
+
+    struct time_information exe_time;
+
+    if (lstat(exe, &exe_stat) == -1) {
+        flb_error("[in_coredump][%s] Failed lstat (%s)", __FUNCTION__, exe);
+        return -1;
+    }
+
+    exe_tm_mtime = localtime(&exe_stat.st_mtime);
+    exe_tm_ctime = localtime(&exe_stat.st_ctime);
+    flb_debug("[in_coredump][%s] Exe Modify time (%s), Change time (%s)", __FUNCTION__, ctime(&exe_stat.st_mtime), ctime(&exe_stat.st_ctime));
+    flb_debug("[in_coredump][%s] Exe Modify time (%d %d %d), Change time (%d %d %d)", __FUNCTION__, exe_tm_mtime->tm_year + 1900, exe_tm_mtime->tm_mon + 1, exe_tm_mtime->tm_mday, exe_tm_ctime->tm_year + 1900, exe_tm_ctime->tm_mon + 1, exe_tm_ctime->tm_mday);
+
+    exe_time.modify_year = exe_tm_mtime->tm_year + 1900;
+    exe_time.modify_mon = exe_tm_mtime->tm_mon + 1;
+    exe_time.modify_mday = exe_tm_mtime->tm_mday;
+    exe_time.change_year = exe_tm_ctime->tm_year + 1900;
+    exe_time.change_mon = exe_tm_ctime->tm_mon + 1;
+    exe_time.change_mday = exe_tm_ctime->tm_mday;
+
+    flb_info("[in_coredump][%s] Exe time information mtime (%d-%d-%d), ctime (%d-%d-%d)", __FUNCTION__, \
+            exe_time.modify_year, exe_time.modify_mon, exe_time.modify_mday, \
+            exe_time.change_year, exe_time.change_mon, exe_time.change_mday);
+
+    if (default_time.modify_year != exe_time.modify_year || default_time.modify_mon != exe_time.modify_mon || default_time.modify_mday != exe_time.modify_mday || \
+        default_time.change_year != exe_time.change_year || default_time.change_mon != exe_time.change_mon || default_time.change_mday != exe_time.change_mday)
+        return -1;
+
+    return 0;
+}
+
+static int create_crashreport(const char *script, const char *corefile, const char *crashreport)
+{
+    // corefile : core.coreexam_exampl.0.c7294e397ec747f98552c7c459f7dc1c.2434.1619053570000000.xz
+    // crashreport : corefile-crashreport.txt
+    // command : webos_capture.py --coredump corefile crashreport
 
     char command[STR_LEN];
-    sprintf(command, "%s --coredump \'%s\' %s", script, file, crashreport);
+    sprintf(command, "%s --coredump \'%s\' %s", script, corefile, crashreport);
     flb_info("[in_coredump][%s] command : %s", __FUNCTION__, command);
 
-    system(command);
+    int ret = system(command);
 
     return 0;
 }
@@ -186,6 +280,10 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
 
     int cnt = 0;
     int i;
+
+    if (init_default_time() == -1) {
+        flb_error("[in_coredump][%s] Failed to initialize default time information", __FUNCTION__);
+    }
 
     bytes = read(ctx->fd, ctx->buf + ctx->buf_len, sizeof(ctx->buf) - ctx->buf_len - 1);
 
@@ -230,13 +328,29 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         }
 
         snprintf(full_path, STR_LEN, "%s/%s", ctx->path, event->name);
-        flb_info("[in_coredump][%s] coredump file is created : (%s)", __FUNCTION__, full_path);
+        flb_info("[in_coredump][%s] New file is created : (%s)", __FUNCTION__, full_path);
         strncpy(corefile, event->name, strlen(event->name));
 
-        parse_coredump_comm(full_path, comm, pid, exe);
+        // Guarantee coredump file closing time
+        sleep(1);
+
+        if (verify_coredump_file(event->name) == -1) {
+            flb_error("[in_coredump][%s] Not coredump file", __FUNCTION__);
+            break;
+        }
+
+        if (parse_coredump_comm(full_path, comm, pid, exe) == -1) {
+            flb_error("[in_coredump][%s] Fail to parse coredump file", __FUNCTION__);
+            break;
+        }
         flb_info("[in_coredump][%s] comm : (%s), pid : (%s), exe (%s)", __FUNCTION__, comm, pid, exe);
 
-        sprintf(crashreport, "/var/log/crashreport_%s.%s.log", comm, pid);
+        if (check_exe_time(exe) == -1) {
+            flb_error("[in_coredump][%s] Not official file", __FUNCTION__);
+            break;
+        }
+
+        sprintf(crashreport, "%s/%s-crashreport.txt", PATH_COREDUMP_DIRECTORY, event->name);
         create_crashreport(ctx->crashreport_script, event->name, crashreport);
 
         if (access(crashreport, F_OK) != 0) {
@@ -245,10 +359,10 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         }
         flb_info("[in_coredump][%s] crashreport file is created : %s)", __FUNCTION__, crashreport);
 
-        snprintf(upload_files, STR_LEN, "\'%s\' %s", full_path, crashreport);
-
-        // Wait closeing time for coredump file
+        // Guarantee crashreport file closing time
         sleep(1);
+
+        snprintf(upload_files, STR_LEN, "\'%s\' %s", full_path, crashreport);
 
         msgpack_pack_array(&mp_pck, 2); // time | value
         flb_pack_time_now(&mp_pck);
@@ -322,7 +436,7 @@ static int in_coredump_init(struct flb_input_instance *in, struct flb_config *co
     // Set the monitoring path for coredump file
     pval = flb_input_get_property("path", in);
     if (pval)
-        ctx->path = pval;
+        ctx->path = (char *)pval;
     else
         ctx->path = PATH_COREDUMP_DIRECTORY;
     flb_info("[in_coredump][%s] Monitoring coredump file path : %s", __FUNCTION__, ctx->path);
