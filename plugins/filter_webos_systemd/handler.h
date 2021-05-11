@@ -53,15 +53,20 @@ public:
 
 private:
     typedef std::function<void(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)> MessageHandler;
+    typedef std::function<void(msgpack_unpacked* result, msgpack_packer* packer)> SyslogIdentifierHandler;
 
     Handler();
 
     void registerRegexAndHandler(const string& regex, MessageHandler handler);
     bool packCommonMsg(msgpack_unpacked* result, flb_time* timestamp, msgpack_packer* packer, size_t mapSize);
 
-    void onAppLaunch(smatch& match, msgpack_unpacked* result, msgpack_packer* packer);
-    void onAppLaunchPerf_begin(smatch& match, msgpack_unpacked* result, msgpack_packer* packer);
-    void onAppLaunchPerf_end(smatch& match, msgpack_unpacked* result, msgpack_packer* packer);
+    void handleSamAppLaunch(smatch& match, msgpack_unpacked* result, msgpack_packer* packer);
+    void handleSamAppLaunchPerf_begin(smatch& match, msgpack_unpacked* result, msgpack_packer* packer);
+    void handleSamAppLaunchPerf_end(smatch& match, msgpack_unpacked* result, msgpack_packer* packer);
+
+    void handleSam(msgpack_unpacked* result, msgpack_packer* packer);
+    void handlePamlogin(msgpack_unpacked* result, msgpack_packer* packer);
+    void handleSystemdCoredump(msgpack_unpacked* result, msgpack_packer* packer);
 
     static const int APPLAUNCHPERF_TIMEOUT_SEC;
     static const string REGEX_SetLifeStatus;
@@ -74,9 +79,11 @@ private:
     string m_webosName;
     string m_webosBuildId;
 
+    map<string, SyslogIdentifierHandler> m_syslogIdentifier2handler;
     map<string, list<MessageHandler>> m_regex2handlers;
 
     PerfRecordList m_appLaunchPerfRecords;
+
 };
 
 #endif
