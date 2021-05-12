@@ -18,8 +18,10 @@
 #define UTIL_MSGPACKUTIL_H_
 
 #include <msgpack.h>
+#include <pbnjson.hpp>
 #include <string>
 
+using namespace pbnjson;
 using namespace std;
 
 class MSGPackUtil {
@@ -30,11 +32,16 @@ public:
     static bool getValue(const msgpack_object* map, const string& key, msgpack_object** value);
     static bool getValue(const msgpack_object* map, const string& key, string& value);
 
+    static void putValue(msgpack_packer* packer, const string& key, const JValue& value);
+    static void putValue(msgpack_packer* packer, const string& key, const string& value);
+    static void putValue(msgpack_packer* packer, const string& key, const char* value);
+    static void putValue(msgpack_packer* packer, const string& key, int value);
+    static void putValue(msgpack_packer* packer, const string& key, double value);
+    static void putValue(msgpack_packer* packer, const string& key, bool value);
+
+private:
     static void packStr(msgpack_packer* packer, const string& str);
-    static void packMap(msgpack_packer* packer, const string& key, size_t n);
-    static void packKeyVal(msgpack_packer* packer, const string& key, const string& val);
-    static void packKeyVal(msgpack_packer* packer, const string& key, const int& val);
-    static void packKeyVal(msgpack_packer* packer, const string& key, const double& val);
+
 };
 
 #endif

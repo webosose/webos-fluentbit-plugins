@@ -50,32 +50,70 @@ bool MSGPackUtil::getValue(const msgpack_object* map, const string& key, string&
     return true;
 }
 
+void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, const JValue& value)
+{
+    if (!value.isObject()) {
+        return;
+    }
+
+    packStr(packer, key);
+    msgpack_pack_map(packer, (size_t)value.objectSize());
+
+    string numberStr;
+    for (auto& kv : value.children()) {
+        switch (kv.second.getType()) {
+        case JV_BOOL:
+            putValue(packer, kv.first.asString(), kv.second.asBool());
+            break;
+        case JV_NUM:
+            // pbnjson does not distinguish integer from floating point (even if the serialized form is X.000000). This is by design.
+            putValue(packer, kv.first.asString(), kv.second.asNumber<int>());
+            break;
+        case JV_STR:
+            putValue(packer, kv.first.asString(), kv.second.asString());
+            break;
+        case JV_OBJECT:
+            putValue(packer, kv.first.asString(), kv.second);
+            break;
+        case JV_NULL:
+        case JV_ARRAY:
+        default:
+            putValue(packer, kv.first.asString(), "Not implemented");
+        }
+    }
+}
+
+void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, const string& value)
+{
+    packStr(packer, key);
+    packStr(packer, value);
+}
+
+void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, const char* value)
+{
+    putValue(packer, key, string(value));
+}
+
+void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, int value)
+{
+    packStr(packer, key);
+    msgpack_pack_int(packer, value);
+}
+
+void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, double value)
+{
+    packStr(packer, key);
+    msgpack_pack_double(packer, value);
+}
+
+void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, bool value)
+{
+    packStr(packer, key);
+    (value) ? msgpack_pack_true(packer) : msgpack_pack_false(packer);
+}
+
 void MSGPackUtil::packStr(msgpack_packer* packer, const string& str)
 {
     msgpack_pack_str(packer, str.length());
     msgpack_pack_str_body(packer, str.c_str(), str.length());
-}
-
-void MSGPackUtil::packMap(msgpack_packer* packer, const string& key, size_t n)
-{
-    packStr(packer, key);
-    msgpack_pack_map(packer, n);
-}
-
-void MSGPackUtil::packKeyVal(msgpack_packer* packer, const string& key, const string& val)
-{
-    packStr(packer, key);
-    packStr(packer, val);
-}
-
-void MSGPackUtil::packKeyVal(msgpack_packer* packer, const string& key, const int& val)
-{
-    packStr(packer, key);
-    msgpack_pack_int(packer, val);
-}
-
-void MSGPackUtil::packKeyVal(msgpack_packer* packer, const string& key, const double& val)
-{
-    packStr(packer, key);
-    msgpack_pack_double(packer, val);
 }

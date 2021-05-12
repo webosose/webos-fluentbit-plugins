@@ -22,6 +22,8 @@
 
 using namespace std;
 
+bool operator <(const timespec& lhs, const timespec& rhs);
+
 class Time {
 public:
     static std::string getCurrentTime();

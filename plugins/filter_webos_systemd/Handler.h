@@ -23,6 +23,7 @@
 #include <memory>
 #include <regex>
 #include <string>
+#include <pbnjson.hpp>
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,6 +41,7 @@ extern "C" {
 #include "PerfRecordList.h"
 #include "interface/ISingleton.h"
 
+using namespace pbnjson;
 using namespace std;
 
 class Handler : public ISingleton<Handler> {
@@ -68,16 +70,16 @@ private:
     void handlePamlogin(msgpack_unpacked* result, msgpack_packer* packer);
     void handleSystemdCoredump(msgpack_unpacked* result, msgpack_packer* packer);
 
+    static const string PATH_RESPAWNED;
     static const int APPLAUNCHPERF_TIMEOUT_SEC;
     static const string REGEX_SetLifeStatus;
     static const string REGEX_ApiLaunchCall;
 
     flb_filter_instance* m_filter_instance;
 
-    string m_deviceId;
-    string m_deviceName;
-    string m_webosName;
-    string m_webosBuildId;
+    bool m_isRespawned;
+    struct timespec m_respawnedTime;
+    JValue m_deviceInfo;
 
     map<string, SyslogIdentifierHandler> m_syslogIdentifier2handler;
     map<string, list<MessageHandler>> m_regex2handlers;

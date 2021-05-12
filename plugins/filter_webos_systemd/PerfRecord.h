@@ -17,7 +17,9 @@
 #ifndef PERFRECORD_H_
 #define PERFRECORD_H_
 
-#include <map>
+#include <algorithm>
+#include <list>
+#include <string>
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,32 +35,43 @@ using namespace std;
 
 class PerfRecord {
 public:
-    static const int STATE_BEGIN;
-    static const int STATE_END;
-
     PerfRecord() {}
     virtual ~PerfRecord() {}
 
-    bool getDiff(int startState, int endState, flb_time* diff);
-
-    void addTimestamp(int state, flb_time time)
+    void addTimestamp(const string& state, flb_time time)
     {
-        m_timestamps[state] = time;
-    }
-
-    const map<int, flb_time>& getTimestamps() const
-    {
-        return m_timestamps;
+        m_timestamps.push_back(make_pair(state, time));
     }
 
     void getLastTimestamp(flb_time** time)
     {
-        *time = &m_timestamps.rbegin()->second;
+        *time = &m_timestamps.back().second;
     }
 
-    bool getTotalTime(flb_time* total)
+    bool getElapsedTime(const string& begin, const string& end, flb_time* diff)
     {
-        return getDiff(STATE_BEGIN, STATE_END, total);
+        flb_time* beginTime = &m_timestamps.front().second;
+        flb_time* endTime = &m_timestamps.back().second;
+
+        if (!begin.empty()) {
+            auto it = std::find_if(m_timestamps.begin(), m_timestamps.end(), [&](auto& pair) { return begin == pair.first; });
+            if (it == m_timestamps.end()) {
+                return false;
+            }
+            beginTime = &it->second;
+        }
+        if (!end.empty()) {
+            auto it = std::find_if(m_timestamps.begin(), m_timestamps.end(), [&](auto& pair) { return end == pair.first; });
+            if (it == m_timestamps.end()) {
+                return false;
+            }
+            endTime = &it->second;
+        }
+
+        if (-1 == flb_time_diff(endTime, beginTime, diff)) {
+            return false;
+        }
+        return true;
     }
 
     void setContext(const string& context)
@@ -72,7 +85,7 @@ public:
     }
 
 private:
-    map<int, flb_time> m_timestamps;
+    list<pair<string, flb_time>> m_timestamps;
     string m_context;
 };
 
