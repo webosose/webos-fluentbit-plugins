@@ -12,7 +12,7 @@ from webos_capture import WebOSCapture
 from webos_uploader import WebOSUploader
 
 
-UNKNOWN = 'Temp'
+COMPONENT_TEMP = 'Temp'
 DEFAULT_JOURNALD = '/tmp/webos_journald.txt'
 DEFAULT_SYSINFO = '/tmp/webos_info.txt'
 
@@ -37,7 +37,7 @@ class WebOSIssue:
             password=common.get_value('account', 'pw'))
         return
 
-    def create_issue(self, summary=None, description=None, unique_summary=False, component=UNKNOWN):
+    def create_issue(self, summary=None, description=None, unique_summary=False, component=COMPONENT_TEMP):
         if summary is None and description is None:
             return None
 
@@ -62,10 +62,10 @@ class WebOSIssue:
             fields['summary'] = summary
         if description is not None:
             fields['description'] = description
-        if component != UNKNOWN:
+        if component != COMPONENT_TEMP:
             components = common.get_value('customfield', 'components')
             if component not in components:
-                component = UNKNOWN
+                component = COMPONENT_TEMP
             fields['components'] = [
                 { "name": component }
             ]
@@ -78,6 +78,19 @@ class WebOSIssue:
                 common.info("'{}' is already created".format(summary))
                 return None
         return self._jira.issue_create(fields)
+
+
+    def guess_component(self, summary):
+        command = "unknown"
+        if summary.find('/usr/sbin') > 0:
+            command = summary[summary.find('/usr/sbin'):]
+        elif summary.find('/usr/bin') > 0:
+            command = summary[summary.find('/usr/bin'):]
+        relations = common.get_value('customfield', 'relations')
+        if command in relations:
+            return relations[command]
+        else:
+            return COMPONENT_TEMP
 
     def update_issue(self, key, summary=None, description=None):
         if summary is None and description is None:
@@ -132,10 +145,10 @@ class WebOSIssue:
                 desc = "SYS_INFO"
 
             basename = os.path.basename(file)
-            if basename.startswith("core"):
-                desc = "COREDUMP"
-            elif basename.startswith("crashreport"):
+            if basename.find('crashreport.txt') > 0:
                 desc = "CRASHREPORT"
+            elif basename.startswith("core"):
+                desc = "COREDUMP"
             comment += "{} : [{}|{}]\n".format(desc, basename, server_files[i])
         self.add_comment(key, comment)
         common.info("All files are uploaded")
@@ -212,7 +225,12 @@ if __name__ == "__main__":
             exit(1)
     elif args.summary is not None:
         # handle 'CREATE' mode
-        result = WebOSIssue.instance().create_issue(args.summary, args.description, args.unique_summary, args.component)
+        component = None
+        if args.component is None:
+            component = WebOSIssue.instance().guess_component(args.summary)
+        else:
+            component = args.component
+        result = WebOSIssue.instance().create_issue(args.summary, args.description, args.unique_summary, component)
         if result is None or 'key' not in result:
             common.error("Failed to create new ticket")
             exit(1)
