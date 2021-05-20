@@ -32,6 +32,9 @@ const int Handler::APPLAUNCHPERF_TIMEOUT_SEC = 60;
 const string Handler::REGEX_SetLifeStatus = "^\\[I\\]\\[RunningApp\\]\\[setLifeStatus\\]\\[([[:print:]]+)\\] Changed: ([[:print:]]+) \\(([[:alpha:]]+) ==> ([[:alpha:]]+)\\)";
 // [I][ApplicationManager][onAPICalled][APIRequest] API(/launch) Sender(com.webos.surfacemanager)
 const string Handler::REGEX_ApiLaunchCall = "^\\[I\\]\\[ApplicationManager\\]\\[onAPICalled\\]\\[APIRequest\\] API\\(/launch\\) Sender\\([[:print:]]+\\)";
+// [I][RuntimeInfo][initialize] DisplayId(-1) DeviceType() IsInContainer(false)
+// [I][RuntimeInfo][initialize] DisplayId(1) DeviceType(RSE) IsInContainer(true)
+const string Handler::REGEX_RuntimeInfo = "^\\[I\\]\\[RuntimeInfo\\]\\[initialize\\] DisplayId\\(([[:graph:]]+)\\) DeviceType\\([[:graph:]]*\\) IsInContainer\\([[:graph:]]*\\)";
 
 extern "C" int initHandler(struct flb_filter_instance *instance, struct flb_config *config, void *data)
 {
@@ -51,7 +54,8 @@ extern "C" int filter(const void *data, size_t bytes, const char *tag, int tag_l
 Handler::Handler()
     : m_filter_instance(NULL),
       m_isRespawned(false),
-      m_appLaunchPerfRecords(APPLAUNCHPERF_TIMEOUT_SEC)
+      m_appLaunchPerfRecords(APPLAUNCHPERF_TIMEOUT_SEC),
+      m_isBootTimePerfDone(false)
 {
     m_deviceInfo = pbnjson::Object();
 }
@@ -113,31 +117,48 @@ int Handler::onInit(struct flb_filter_instance *instance, struct flb_config *con
     flb_plg_info(m_filter_instance, "[%s] webosName : %s", __FUNCTION__, webosName.c_str());
     flb_plg_info(m_filter_instance, "[%s] webosBuildId : %s", __FUNCTION__, webosBuildId.c_str());
 
+    bool isAppLaunchOn = true, isAppLaunchPerfOn = true, isLoginLogoutOn = true, isCrashOn = true, isBootTimePerfOn = true;
     struct mk_list *head;
     struct flb_kv *kv;
     /* Iterate all filter parameters */
     mk_list_foreach(head, &instance->properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
 
-        if (strcasecmp(kv->key, "applaunch") == 0 && strcasecmp(kv->val, "on") == 0) {
-            flb_plg_info(m_filter_instance, "[%s] Applaunch is On", __FUNCTION__);
-            m_syslogIdentifier2handler["sam"] = std::bind(&Handler::handleSam, this, std::placeholders::_1, std::placeholders::_2);
-            registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&Handler::handleSamAppLaunch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-        }
-        if (strcasecmp(kv->key, "applaunch_perf") == 0 && strcasecmp(kv->val, "on") == 0) {
-            flb_plg_info(m_filter_instance, "[%s] AppLaunch_perf is On", __FUNCTION__);
-            m_syslogIdentifier2handler["sam"] = std::bind(&Handler::handleSam, this, std::placeholders::_1, std::placeholders::_2);
-            registerRegexAndHandler(REGEX_ApiLaunchCall, std::bind(&Handler::handleSamAppLaunchPerf_begin, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-            registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&Handler::handleSamAppLaunchPerf_end, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-        }
-        if (strcasecmp(kv->key, "login_logout") == 0 && strcasecmp(kv->val, "on") == 0) {
-            flb_plg_info(m_filter_instance, "[%s] Login/Logout is On", __FUNCTION__);
-            m_syslogIdentifier2handler["pamlogin"] = std::bind(&Handler::handlePamlogin, this, std::placeholders::_1, std::placeholders::_2);
-        }
-        if (strcasecmp(kv->key, "crash") == 0 && strcasecmp(kv->val, "on") == 0) {
-            flb_plg_info(m_filter_instance, "[%s] Crash is On", __FUNCTION__);
-            m_syslogIdentifier2handler["systemd-coredump"] = std::bind(&Handler::handleSystemdCoredump, this, std::placeholders::_1, std::placeholders::_2);
-        }
+        if (strcasecmp(kv->key, "applaunch") == 0 && strcasecmp(kv->val, "off") == 0)
+            isAppLaunchOn = false;
+        if (strcasecmp(kv->key, "applaunch_perf") == 0 && strcasecmp(kv->val, "off") == 0)
+            isAppLaunchPerfOn = false;
+        if (strcasecmp(kv->key, "login_logout") == 0 && strcasecmp(kv->val, "off") == 0)
+            isLoginLogoutOn = false;
+        if (strcasecmp(kv->key, "crash") == 0 && strcasecmp(kv->val, "off") == 0)
+            isCrashOn = false;
+        if (strcasecmp(kv->key, "boottime_perf") == 0 && strcasecmp(kv->val, "off") == 0)
+            isBootTimePerfOn = false;
+    }
+    if (isAppLaunchOn) {
+        flb_plg_info(m_filter_instance, "[%s] Applaunch is On", __FUNCTION__);
+        m_syslogIdentifier2handler["sam"] = std::bind(&Handler::handleSam, this, std::placeholders::_1, std::placeholders::_2);
+        registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&Handler::handleSamAppLaunch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    }
+    if (isAppLaunchPerfOn) {
+        flb_plg_info(m_filter_instance, "[%s] Applaunch_Perf is On", __FUNCTION__);
+        m_syslogIdentifier2handler["sam"] = std::bind(&Handler::handleSam, this, std::placeholders::_1, std::placeholders::_2);
+        registerRegexAndHandler(REGEX_ApiLaunchCall, std::bind(&Handler::handleSamAppLaunchPerf_begin, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&Handler::handleSamAppLaunchPerf_end, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    }
+    if (isLoginLogoutOn) {
+        flb_plg_info(m_filter_instance, "[%s] Login/Logout is On", __FUNCTION__);
+        m_syslogIdentifier2handler["pamlogin"] = std::bind(&Handler::handlePamlogin, this, std::placeholders::_1, std::placeholders::_2);
+    }
+    if (isCrashOn) {
+        flb_plg_info(m_filter_instance, "[%s] Crash is On", __FUNCTION__);
+        m_syslogIdentifier2handler["systemd-coredump"] = std::bind(&Handler::handleSystemdCoredump, this, std::placeholders::_1, std::placeholders::_2);
+    }
+    if (isBootTimePerfOn) {
+        flb_plg_info(m_filter_instance, "[%s] Boottime_Perf is On", __FUNCTION__);
+        m_syslogIdentifier2handler["sam"] = std::bind(&Handler::handleSam, this, std::placeholders::_1, std::placeholders::_2);
+        registerRegexAndHandler(REGEX_RuntimeInfo, std::bind(&Handler::handleSamBootTimePerf_begin, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&Handler::handleSamBootTimePerf_end, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     }
     return 0;
 }
@@ -339,6 +360,75 @@ void Handler::handleSamAppLaunchPerf_end(smatch& match, msgpack_unpacked* result
     appLaunchPerf.put("totalTimeMs", (int)(flb_time_to_double(&total)*1000+0.5)); // round-off
     MSGPackUtil::putValue(packer, "appLaunchPerf", appLaunchPerf);
     flb_plg_info(m_filter_instance, "[appLaunchPerf] %s", appLaunchPerf.stringify().c_str());
+}
+
+void Handler::handleSamBootTimePerf_begin(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
+{
+    if (m_isBootTimePerfDone || m_isRespawned)
+        return;
+    string pid;
+    if (!MSGPackUtil::getValue(&result->data.via.array.ptr[1], "_PID", pid))
+        return;
+
+    const string& displayId = match[1];
+    // count the number of displays
+    m_displayId2bootdone[displayId] = make_pair(pid, false);
+    flb_plg_debug(m_filter_instance, "[%s] displayId(%s)", __FUNCTION__, displayId.c_str());
+}
+
+void Handler::handleSamBootTimePerf_end(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
+{
+    if (m_isBootTimePerfDone || m_isRespawned)
+        return;
+    if ("foreground" != match[4])
+        return;
+    string pid;
+    if (!MSGPackUtil::getValue(&result->data.via.array.ptr[1], "_PID", pid))
+        return;
+
+    bool isBootdoneOnAllDisplays = true;
+    msgpack_object *map;
+    flb_time loggedRealtime;
+    flb_time_pop_from_msgpack(&loggedRealtime, result, &map);
+
+    for (auto& kv : m_displayId2bootdone) {
+        if (kv.second.first == pid) {
+            kv.second.second = true;
+        }
+        if (!kv.second.second) {
+            isBootdoneOnAllDisplays = false;
+        }
+    }
+    if (!isBootdoneOnAllDisplays) {
+        return;
+    }
+
+    JValue bootTimePerf = Object();
+    flb_time currentRealtime, currentMonotonic;
+    flb_time elapsedTimeSinceLogged;
+    flb_time monotonicAtLogged;
+    if (-1 == clock_gettime(CLOCK_REALTIME, &currentRealtime.tm)) {
+        flb_plg_error(m_filter_instance, "[%s] Failed to clock_gettime : %s", __FUNCTION__, strerror(errno));
+        goto Done;
+    }
+    if (-1 == clock_gettime(CLOCK_MONOTONIC, &currentMonotonic.tm)) {
+        flb_plg_error(m_filter_instance, "[%s] Failed to clock_gettime : %s", __FUNCTION__, strerror(errno));
+        goto Done;
+    }
+    // Analyzing the logs, the kernel starts with 0 monotonic time.
+    // So, the monotonic time at the point of logged is considered as the boot time.
+    flb_time_diff(&currentRealtime, &loggedRealtime, &elapsedTimeSinceLogged);
+    flb_time_diff(&currentMonotonic, &elapsedTimeSinceLogged, &monotonicAtLogged);
+
+    if (!packCommonMsg(result, &loggedRealtime, packer, 4))
+        goto Done;
+    MSGPackUtil::putValue(packer, "type", "bootTimePerf");
+    bootTimePerf.put("totalTimeMs", (int)(flb_time_to_double(&monotonicAtLogged)*1000+0.5)); // round-off
+    MSGPackUtil::putValue(packer, "bootTimePerf", bootTimePerf);
+    flb_plg_info(m_filter_instance, "[bootTimePerf] %s", bootTimePerf.stringify().c_str());
+
+Done:
+    m_isBootTimePerfDone = true;
 }
 
 void Handler::handleSam(msgpack_unpacked* result, msgpack_packer* packer)

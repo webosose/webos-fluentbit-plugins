@@ -65,26 +65,40 @@ private:
     void handleSamAppLaunch(smatch& match, msgpack_unpacked* result, msgpack_packer* packer);
     void handleSamAppLaunchPerf_begin(smatch& match, msgpack_unpacked* result, msgpack_packer* packer);
     void handleSamAppLaunchPerf_end(smatch& match, msgpack_unpacked* result, msgpack_packer* packer);
+    void handleSamBootTimePerf_begin(smatch& match, msgpack_unpacked* result, msgpack_packer* packer);
+    void handleSamBootTimePerf_end(smatch& match, msgpack_unpacked* result, msgpack_packer* packer);
 
     void handleSam(msgpack_unpacked* result, msgpack_packer* packer);
     void handlePamlogin(msgpack_unpacked* result, msgpack_packer* packer);
     void handleSystemdCoredump(msgpack_unpacked* result, msgpack_packer* packer);
+    void handleKernel(msgpack_unpacked* result, msgpack_packer* packer);
 
     static const string PATH_RESPAWNED;
     static const int APPLAUNCHPERF_TIMEOUT_SEC;
     static const string REGEX_SetLifeStatus;
     static const string REGEX_ApiLaunchCall;
+    static const string REGEX_RuntimeInfo;
 
+    // Used for logging : flb_plg_info(...)
     flb_filter_instance* m_filter_instance;
 
     bool m_isRespawned;
+    // Used to exclude the past time journald logs, when respawned.
     struct timespec m_respawnedTime;
     JValue m_deviceInfo;
 
+    // For each module, register handlers : sam, bootd, pamlogin, ..
     map<string, SyslogIdentifierHandler> m_syslogIdentifier2handler;
+
+    // For sam logs, it is used in many places, so register regex and handlers.
     map<string, list<MessageHandler>> m_regex2handlers;
 
     PerfRecordList m_appLaunchPerfRecords;
+
+    // For multiple displays, first app should be foregrounded on all displays.
+    // map[DisplayID] = pair<PID-of-Sam, Is-firstapp-Forgrounded>
+    map<string, pair<string, bool>> m_displayId2bootdone;
+    bool m_isBootTimePerfDone;
 
 };
 
