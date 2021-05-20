@@ -30,6 +30,8 @@ def update_config(first_key, configs):
             s = set(mm_configs[first_key][second_key])
             s.update(configs[second_key])
             mm_configs[first_key][second_key] = list(s)
+        elif isinstance(configs[second_key], dict):
+            mm_configs[first_key][second_key].update(configs[second_key])
         else:
             mm_configs[first_key][second_key] = configs[second_key]
 
@@ -49,9 +51,12 @@ update_configs('/etc/webos_config_2.json')
 rw_configs = update_configs('/var/luna/preferences/webos_rdx.json')
 
 def get_value(first_key, second_key=None):
-    if second_key is None:
-        return mm_configs[first_key]
-    return mm_configs[first_key][second_key]
+    try:
+        if second_key is None:
+            return mm_configs[first_key]
+        return mm_configs[first_key][second_key]
+    except:
+        return None
 
 def set_value(first_key, second_key, value):
     if first_key not in rw_configs:
@@ -65,7 +70,6 @@ def set_value(first_key, second_key, value):
 
 if __name__ == "__main__":
     print(json.dumps(mm_configs, indent=4, sort_keys=True))
-
 
 
 ####### LOGGER #######
