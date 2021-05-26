@@ -1,28 +1,61 @@
-/* @@@LICENSE
- *
- * Copyright (c) 2021 LG Electronics, Inc.
- *
- * Confidential computer software. Valid license from LG required for
- * possession, use or copying. Consistent with FAR 12.211 and 12.212,
- * Commercial Computer Software, Computer Software Documentation, and
- * Technical Data for Commercial Items are licensed to the U.S. Government
- * under vendor's standard commercial license.
- *
- * LICENSE@@@
- */
+// Copyright (c) 2021 LG Electronics, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
 
-#ifndef _PLUGIN_LOG_H
-#define _PLUGIN_LOG_H
+#ifndef UTIL_LOGGER_H_
+#define UTIL_LOGGER_H_
 
-#include <stdio.h>
+#include "FluentBit.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define PLUGIN_NAME_LEN 32
+
+struct LogContext {
+    int logLevel;
+    char pluginName[PLUGIN_NAME_LEN];
+};
+
+struct LogContext* getLogContext();
+
+void setLogContext(int logLevel, char* pluginName);
 
 #define PLUGIN_DEBUG(fmt, ...) \
-    printf("[debug][%s] " fmt " \n", __FUNCTION__ , ##__VA_ARGS__)
+    if (flb_log_check_level(getLogContext()->logLevel, FLB_LOG_DEBUG)) \
+        flb_log_print(FLB_LOG_DEBUG, NULL, 0, "[%s][%s] " fmt, \
+                      getLogContext()->pluginName, __FUNCTION__, ##__VA_ARGS__)
 
 #define PLUGIN_INFO(fmt, ...) \
-    printf("[ info][%s] " fmt " \n", __FUNCTION__ , ##__VA_ARGS__)
+    if (flb_log_check_level(getLogContext()->logLevel, FLB_LOG_INFO)) \
+        flb_log_print(FLB_LOG_INFO, NULL, 0, "[%s][%s] " fmt, \
+                      getLogContext()->pluginName, __FUNCTION__, ##__VA_ARGS__)
+
+#define PLUGIN_WARN(fmt, ...) \
+    if (flb_log_check_level(getLogContext()->logLevel, FLB_LOG_WARN)) \
+        flb_log_print(FLB_LOG_WARN, NULL, 0, "[%s][%s] " fmt, \
+                      getLogContext()->pluginName, __FUNCTION__, ##__VA_ARGS__)
 
 #define PLUGIN_ERROR(fmt, ...) \
-    printf("[error][%s] " fmt " \n", __FUNCTION__ , ##__VA_ARGS__)
+    if (flb_log_check_level(getLogContext()->logLevel, FLB_LOG_ERROR)) \
+        flb_log_print(FLB_LOG_ERROR, NULL, 0, "[%s][%s] " fmt, \
+                      getLogContext()->pluginName, __FUNCTION__, ##__VA_ARGS__)
 
-#endif /* PLUGIN_LOG_H */
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* UTIL_LOGGER_H_ */

@@ -14,15 +14,11 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
-#include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_time.h>
-#include <fluent-bit/flb_pack.h>
-#include <msgpack.h>
+#include "jira.h"
+
 #include <sys/wait.h>
 
-#include "jira.h"
+#include "util/Logger.h"
 
 #define KEY_SUMMARY             "summary"
 #define KEY_UPLOAD_FILES        "upload-files"
@@ -53,16 +49,18 @@ static bool get_json_string(struct json_object *object, const char *key, const c
 
 static int cb_jira_init(struct flb_output_instance *ins, struct flb_config *config, void *data)
 {
+    setLogContext(ins->log_level, ins->p->name);
+
     int ret;
     const char *tmp;
-    struct flb_out_jira_config *ctx = NULL;
+    struct flb_jira_config *ctx = NULL;
     (void) ins;
     (void) config;
     (void) data;
 
-    ctx = flb_calloc(1, sizeof(struct flb_out_jira_config));
+    ctx = flb_calloc(1, sizeof(struct flb_jira_config));
     if (!ctx) {
-        flb_error("[out_jira][%s] failed to calloc", __FUNCTION__);
+        PLUGIN_ERROR("failed to calloc");
         return -1;
     }
 
@@ -72,7 +70,7 @@ static int cb_jira_init(struct flb_output_instance *ins, struct flb_config *conf
     if (tmp) {
         ret = flb_pack_to_json_format_type(tmp);
         if (ret == -1)
-            flb_error("[out_jira][%s] unrecognized 'format' option", __FUNCTION__);
+            PLUGIN_ERROR("unrecognized 'format' option");
         else
             ctx->out_format = ret;
     }
@@ -83,7 +81,7 @@ static int cb_jira_init(struct flb_output_instance *ins, struct flb_config *conf
     if (tmp) {
         ret = flb_pack_to_json_date_type(tmp);
         if (ret == -1)
-            flb_error("[out_jira][%s] unrecognized 'json_date_format' option", __FUNCTION__);
+            PLUGIN_ERROR("unrecognized 'json_date_format' option");
         else
             ctx->json_date_format = ret;
     }
@@ -94,7 +92,7 @@ static int cb_jira_init(struct flb_output_instance *ins, struct flb_config *conf
         ctx->jira_script = tmp;
     else
         ctx->jira_script = DEFAULT_SCRIPT;
-    flb_info("[out_jira][%s] Jira script : %s", __FUNCTION__, ctx->jira_script);
+    PLUGIN_INFO("Jira script : %s", ctx->jira_script);
 
     // Set date key
     tmp = flb_output_get_property("json_date_key", ins);
@@ -106,7 +104,7 @@ static int cb_jira_init(struct flb_output_instance *ins, struct flb_config *conf
     // Export context
     flb_output_set_context(ins, ctx);
 
-    flb_info("[out_jira][%s] initialize done", __FUNCTION__);
+    PLUGIN_INFO("initialize done");
 
     return 0;
 }
@@ -119,7 +117,7 @@ static void cb_jira_flush(const void *data,
                           void *out_context,
                           struct flb_config *config)
 {
-    struct flb_out_jira_config *ctx = out_context;
+    struct flb_jira_config *ctx = out_context;
     flb_sds_t json;
 
     struct json_object *object;
@@ -128,27 +126,27 @@ static void cb_jira_flush(const void *data,
     char command[STR_LEN];
 
     json = flb_pack_msgpack_to_json_format(data, bytes, ctx->out_format, ctx->json_date_format, ctx->json_date_key);
-    flb_debug("[out_jira][%s] %s", __FUNCTION__, json);
+    PLUGIN_DEBUG("%s", json);
 
     object = json_tokener_parse(json);
 
     if (!get_json_string(object, KEY_SUMMARY, &summary)) {
-        flb_error("[out_jira][%s] failed to get summary on (%s)", __FUNCTION__, object);
+        PLUGIN_ERROR("failed to get summary on (%s)", object);
         return;
     }
-    flb_info("[out_jira][%s] summary : %s", __FUNCTION__, summary);
+    PLUGIN_INFO("summary : %s", summary);
 
     if (!get_json_string(object, KEY_UPLOAD_FILES, &upload_files)) {
-        flb_error("[out_jira][%s] failed to get upload-files on (%s)", __FUNCTION__, object);
+        PLUGIN_ERROR("failed to get upload-files on (%s)", object);
         return;
     }
-    flb_info("[out_jira][%s] upload-files : %s", __FUNCTION__, upload_files);
+    PLUGIN_INFO("upload-files : %s", upload_files);
 
     // template : command --summary XXX --unique-summary --upload-files YYY
     // example  : webos_issue.py --summary "[CRASH][OSE] bootd" --unique-summary --upload-files core.bootd.0.....xz
 
     sprintf(command, "%s --summary \'%s\' --unique-summary --upload-files %s", ctx->jira_script, summary, upload_files);
-    flb_info("[out_jira][%s] command : %s", __FUNCTION__, command);
+    PLUGIN_INFO("command : %s", command);
 
     int ret = system(command);
 
@@ -157,7 +155,7 @@ static void cb_jira_flush(const void *data,
 
 static int cb_jira_exit(void *data, struct flb_config *config)
 {
-    struct flb_out_jira_config *ctx = data;
+    struct flb_jira_config *ctx = data;
 
     if (!ctx) {
         return 0;

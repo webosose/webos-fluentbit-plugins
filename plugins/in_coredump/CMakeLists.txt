@@ -16,12 +16,14 @@
 #
 # LICENSE@@@
 
-webos_configure_source_files(cfg ${CMAKE_CURRENT_SOURCE_DIR}/Environment.h)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-include_directories(${PROJECT_BINARY_DIR}/Configured/plugins/in_coredump)
 
-set(src
-    in_coredump.c
+file(GLOB_RECURSE SRC_C ${CMAKE_CURRENT_SOURCE_DIR}/*.c)
+file(GLOB_RECURSE SRC_CPP ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+
+set(SRC
+    ${SRC_C}
+    ${SRC_CPP}
 )
 
-FLB_PLUGIN(in_coredump "${src}" "")
+FLB_PLUGIN(in_coredump "${SRC}" "")

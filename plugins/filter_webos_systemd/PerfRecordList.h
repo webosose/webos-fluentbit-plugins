@@ -14,8 +14,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef APPLAUNCHPERFLIST_H_
-#define APPLAUNCHPERFLIST_H_
+#ifndef PERFRECORDLIST_H_
+#define PERFRECORDLIST_H_
 
 #include <list>
 #include <map>

@@ -25,26 +25,17 @@
 #include <string>
 #include <pbnjson.hpp>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <fluent-bit.h>
-#include <fluent-bit/flb_filter_plugin.h>
-#include <fluent-bit/flb_kv.h>
-#include <fluent-bit/flb_time.h>
-
-#ifdef __cplusplus
-}
-#endif
+#include "FluentBit.h"
 
 #include "PerfRecordList.h"
+#include "interface/IClassName.h"
 #include "interface/ISingleton.h"
 
 using namespace pbnjson;
 using namespace std;
 
-class Handler : public ISingleton<Handler> {
+class Handler : public IClassName,
+                public ISingleton<Handler> {
 friend class ISingleton<Handler>;
 public:
     virtual ~Handler();
@@ -78,9 +69,6 @@ private:
     static const string REGEX_SetLifeStatus;
     static const string REGEX_ApiLaunchCall;
     static const string REGEX_RuntimeInfo;
-
-    // Used for logging : flb_plg_info(...)
-    flb_filter_instance* m_filter_instance;
 
     bool m_isRespawned;
     // Used to exclude the past time journald logs, when respawned.

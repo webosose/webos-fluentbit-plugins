@@ -14,18 +14,17 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef FLB_OUT_JIRA_H
-#define FLB_OUT_JIRA_H
+#include "util/Logger.h"
 
-#include <json.h>
+struct LogContext g_logContext;
 
-#include "FluentBit.h"
+struct LogContext* getLogContext()
+{
+    return &g_logContext;
+}
 
-struct flb_jira_config {
-    int out_format;
-    int json_date_format;
-    flb_sds_t json_date_key;
-    const char *jira_script;
-};
-
-#endif
+void setLogContext(int logLevel, char* pluginName)
+{
+    g_logContext.logLevel = logLevel;
+    strncpy(g_logContext.pluginName, pluginName, PLUGIN_NAME_LEN-1);
+}

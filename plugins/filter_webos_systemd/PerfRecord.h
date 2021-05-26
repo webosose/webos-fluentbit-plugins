@@ -21,15 +21,7 @@
 #include <list>
 #include <string>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <fluent-bit/flb_time.h>
-
-#ifdef __cplusplus
-}
-#endif
+#include "FluentBit.h"
 
 using namespace std;
 

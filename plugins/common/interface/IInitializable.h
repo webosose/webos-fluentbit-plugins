@@ -25,28 +25,27 @@ using namespace std;
 
 class IInitializable : public IClassName {
 public:
-    virtual ~IInitializable(){};
+    virtual ~IInitializable(){}
 
     virtual bool initialize(GMainLoop *mainloop) final
     {
-        PLUGIN_DEBUG("Start initialization");
+        PLUGIN_INFO("[%s] Start initialization", m_className.c_str());
         m_mainloop = mainloop;
         m_isInitalized = onInitialization();
-        PLUGIN_DEBUG("End initialization");
+        PLUGIN_INFO("[%s] End initialization", m_className.c_str());
         return m_isInitalized;
     }
 
     virtual bool finalize() final
     {
-        PLUGIN_DEBUG("Start finalization");
+        PLUGIN_INFO("[%s] Start finalization", m_className.c_str());
         m_isFinalized = onFinalization();
-        PLUGIN_DEBUG("End finalization");
+        PLUGIN_INFO("[%s] End finalization", m_className.c_str());
         return m_isFinalized;
     }
 
-    virtual bool isInitalized() { return m_isInitalized; }
-
-    virtual bool isFinalized() { return m_isFinalized; }
+    virtual bool isInitalized() const { return m_isInitalized; }
+    virtual bool isFinalized() const { return m_isFinalized; }
 
     virtual bool onInitialization() = 0;
     virtual bool onFinalization() = 0;
@@ -57,7 +56,6 @@ protected:
           m_isInitalized(false),
           m_isFinalized(false)
     {
-
     }
 
     GMainLoop *m_mainloop;

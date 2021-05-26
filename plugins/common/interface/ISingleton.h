@@ -21,7 +21,7 @@ using namespace std;
 template <class T>
 class ISingleton {
 public:
-    virtual ~ISingleton(){};
+    virtual ~ISingleton(){}
 
     static T& getInstance()
     {
@@ -30,7 +30,7 @@ public:
     }
 
 protected:
-    ISingleton(){};
+    ISingleton(){}
 };
 
 #endif /* INTERFACE_ISINGLETON_H_ */

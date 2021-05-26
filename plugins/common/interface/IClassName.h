@@ -14,21 +14,21 @@
 #ifndef INTERFACE_ICLASSNAME_H_
 #define INTERFACE_ICLASSNAME_H_
 
-#include <iostream>
+#include <string>
 
 using namespace std;
 
 class IClassName {
 public:
-    IClassName() : m_name("Unknown"){};
-    virtual ~IClassName(){};
+    IClassName() : m_className("Unknown"){}
+    virtual ~IClassName(){}
 
-    string &getClassName() { return m_name; }
+    const string& getClassName() const { return m_className; }
 
-    void setClassName(string name) { m_name = name; }
+    void setClassName(const string& className) { m_className = className; }
 
-private:
-    string m_name;
+protected:
+    string m_className;
 };
 
 #endif /* INTERFACE_ICLASSNAME_H_ */
