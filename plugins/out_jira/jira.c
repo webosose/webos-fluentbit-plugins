@@ -129,15 +129,18 @@ static void cb_jira_flush(const void *data,
     PLUGIN_DEBUG("%s", json);
 
     object = json_tokener_parse(json);
+    flb_sds_destroy(json);
 
     if (!get_json_string(object, KEY_SUMMARY, &summary)) {
         PLUGIN_ERROR("failed to get summary on (%s)", object);
+        json_object_put(object); // free
         return;
     }
     PLUGIN_INFO("summary : %s", summary);
 
     if (!get_json_string(object, KEY_UPLOAD_FILES, &upload_files)) {
         PLUGIN_ERROR("failed to get upload-files on (%s)", object);
+        json_object_put(object); // free
         return;
     }
     PLUGIN_INFO("upload-files : %s", upload_files);
@@ -147,6 +150,7 @@ static void cb_jira_flush(const void *data,
 
     sprintf(command, "%s --summary \'%s\' --unique-summary --attach-crashcounter --upload-files %s", ctx->jira_script, summary, upload_files);
     PLUGIN_INFO("command : %s", command);
+    json_object_put(object); // free
 
     int ret = system(command);
 
