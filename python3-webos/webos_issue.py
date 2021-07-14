@@ -15,6 +15,7 @@ from webos_uploader import WebOSUploader
 COMPONENT_TEMP = 'Temp'
 DEFAULT_JOURNALD = '/tmp/webos_journald.txt'
 DEFAULT_SYSINFO = '/tmp/webos_info.txt'
+DEFAULT_MESSAGES = '/tmp/webos_messages.tgz'
 
 
 class WebOSIssue:
@@ -143,6 +144,8 @@ class WebOSIssue:
                 desc = "SYS_LOG"
             elif file == DEFAULT_SYSINFO:
                 desc = "SYS_INFO"
+            elif file == DEFAULT_MESSAGES:
+                desc = "MESSAGES"
 
             basename = os.path.basename(file)
             if basename.find('crashreport.txt') > 0:
@@ -239,10 +242,12 @@ if __name__ == "__main__":
 
         if args.without_sysinfo is False:
             WebOSCapture.instance().capture_journald(DEFAULT_JOURNALD)
-            WebOSCapture.instance().capture_sysinfo()
+            WebOSCapture.instance().capture_sysinfo(DEFAULT_SYSINFO)
+            WebOSCapture.instance().capture_messages(DEFAULT_MESSAGES)
 
             upload_files.append(DEFAULT_JOURNALD)
             upload_files.append(DEFAULT_SYSINFO)
+            upload_files.append(DEFAULT_MESSAGES)
     else:
         common.info("'key' or 'summary' is needed")
         exit(1)
