@@ -51,6 +51,8 @@ struct time_information
 
 struct time_information default_time;
 
+extern bool getCrashedFunction(const char* crashreport, char* crashed_func);
+
 static int init_default_time()
 {
     PLUGIN_INFO("init default time information (%s) file", DEFAULT_TIME_FILE);
@@ -264,6 +266,7 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
     char exe[STR_LEN];
     char corefile[STR_LEN];
     char crashreport[STR_LEN];
+    char crashed_func[STR_LEN];
     char upload_files[STR_LEN];
     char summary[STR_LEN];
     int len;
@@ -360,6 +363,11 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         // Guarantee crashreport file closing time
         sleep(1);
 
+        if (!getCrashedFunction(crashreport, crashed_func)) {
+            PLUGIN_WARN("Fail to find crashed function");
+            crashed_func[0] = '\0';
+        }
+
         snprintf(upload_files, STR_LEN, "\'%s\' %s", full_path, crashreport);
 
         msgpack_pack_array(&mp_pck, 2); // time | value
@@ -379,7 +387,7 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         msgpack_pack_str(&mp_pck, len=strlen(KEY_SUMMARY));
         msgpack_pack_str_body(&mp_pck, KEY_SUMMARY, len);
 
-        snprintf(summary, STR_LEN, "[RDX_CRASH][%s] %s", distro_result, exe);
+        snprintf(summary, STR_LEN, "[RDX_CRASH][%s] %s %s", distro_result, exe, crashed_func);
         msgpack_pack_str(&mp_pck, len=strlen(summary));
         msgpack_pack_str_body(&mp_pck, summary, len);
         PLUGIN_INFO("Add msgpack - key (%s) : val (%s)", KEY_SUMMARY, summary);
