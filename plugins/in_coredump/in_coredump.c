@@ -268,6 +268,7 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
     char summary[STR_LEN];
     int len;
     char distro_result[STR_LEN];
+    char temp[STR_LEN];
 
     int cnt = 0;
     int i;
@@ -341,8 +342,14 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
             break;
         }
 
-        sprintf(crashreport, "%s/%s-crashreport.txt", PATH_COREDUMP_DIRECTORY, event->name);
-        create_crashreport(ctx->crashreport_script, event->name, crashreport);
+        if ((access("/run/systemd/journal/socket", F_OK) == 0)) {
+            sprintf(crashreport, "%s/%s-crashreport.txt", PATH_COREDUMP_DIRECTORY, event->name);
+            create_crashreport(ctx->crashreport_script, event->name, crashreport);
+        } else {
+            strncpy(temp, event->name, strlen(event->name) - 3);
+            temp[strlen(temp)] = '\0';
+            sprintf(crashreport, "/tmp/%s-crashreport.txt", temp);
+        }
 
         if (access(crashreport, F_OK) != 0) {
             PLUGIN_ERROR("failed to create crashreport : %s", crashreport);
