@@ -16,6 +16,7 @@ COMPONENT_TEMP = 'Temp'
 DEFAULT_JOURNALD = '/tmp/webos_journald.txt'
 DEFAULT_SYSINFO = '/tmp/webos_info.txt'
 DEFAULT_MESSAGES = '/tmp/webos_messages.tgz'
+DEFAULT_SCREENSHOT = '/tmp/webos_screenshot.jpg'
 PROJECT_KEY = 'WRN'
 
 
@@ -174,6 +175,8 @@ class WebOSIssue:
                 desc = "SYS_INFO"
             elif file == DEFAULT_MESSAGES:
                 desc = "MESSAGES"
+            elif file == DEFAULT_SCREENSHOT:
+                desc = "SCREENSHOT"
 
             basename = os.path.basename(file)
             if basename.find('crashreport.txt') > 0:
@@ -297,6 +300,8 @@ if __name__ == "__main__":
             upload_files.append(DEFAULT_JOURNALD)
             upload_files.append(DEFAULT_SYSINFO)
             upload_files.append(DEFAULT_MESSAGES)
+        WebOSCapture.instance().capture_screenshot(DEFAULT_SCREENSHOT)
+        upload_files.append(DEFAULT_SCREENSHOT)
     else:
         common.info("'key' or 'summary' is needed")
         exit(1)
