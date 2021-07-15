@@ -115,8 +115,9 @@ class WebOSCapture:
             args = '{{"output":"{}","format":"JPG"}}'.format(file)
             command = "luna-send -n 1 luna://com.webos.surfacemanager/captureCompositorOutput '{}'".format(args)
         else:
-            args = '{{"path":"{}","method":"DISPLAY","width":1920,"height":1080,"format":"JPEG""}}'
+            args = '{{"path":"{}","method":"DISPLAY","width":1920,"height":1080,"format":"JPEG"}}'.format(file)
             command = "luna-send -n 1 luna://com.webos.service.capture/executeOneShot '{}'".format(args)
+        common.debug(command)
         subprocess.check_output(command, shell=True, encoding='utf-8')
         print('Capture screenshot : {}'.format(file))
         return
