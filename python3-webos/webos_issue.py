@@ -65,13 +65,14 @@ class WebOSIssue:
             fields['summary'] = summary
         if description is not None:
             fields['description'] = description
+        common.debug('component {}'.format(component))
         if component != COMPONENT_TEMP:
             components = common.get_value('customfield', 'components')
             if component not in components:
                 component = COMPONENT_TEMP
-            fields['components'] = [
-                { "name": component }
-            ]
+        fields['components'] = [
+            { "name": component }
+        ]
 
         if unique_summary:
             if summary is None:
@@ -96,6 +97,7 @@ class WebOSIssue:
             command = summary[summary.find('/usr/bin'):]
         if command.find(' ') > 0:
             command = command[:command.find(' ')]
+        common.debug('command {}'.format(command))
         relations = common.get_value('customfield', 'relations')
         if command in relations:
             return relations[command]
