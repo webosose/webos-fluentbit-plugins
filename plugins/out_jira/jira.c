@@ -131,18 +131,15 @@ static void cb_jira_flush(const void *data,
     flb_debug("[out_jira][%s] %s", __FUNCTION__, json);
 
     object = json_tokener_parse(json);
-    flb_sds_destroy(json);
 
     if (!get_json_string(object, KEY_SUMMARY, &summary)) {
         flb_error("[out_jira][%s] failed to get summary on (%s)", __FUNCTION__, object);
-        json_object_put(object); // free
         return;
     }
     flb_info("[out_jira][%s] summary : %s", __FUNCTION__, summary);
 
     if (!get_json_string(object, KEY_UPLOAD_FILES, &upload_files)) {
         flb_error("[out_jira][%s] failed to get upload-files on (%s)", __FUNCTION__, object);
-        json_object_put(object); // free
         return;
     }
     flb_info("[out_jira][%s] upload-files : %s", __FUNCTION__, upload_files);
@@ -152,7 +149,6 @@ static void cb_jira_flush(const void *data,
 
     sprintf(command, "%s --summary \'%s\' --unique-summary --upload-files %s", ctx->jira_script, summary, upload_files);
     flb_info("[out_jira][%s] command : %s", __FUNCTION__, command);
-    json_object_put(object); // free
 
     int ret = system(command);
 
