@@ -17,10 +17,10 @@
 #ifndef FLB_IN_COREDUMP_H
 #define FLB_IN_COREDUMP_H
 
-#include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_input.h>
+#include <sys/inotify.h>
 
 #include "Environment.h"
+#include "FluentBit.h"
 
 #define EVENT_SIZE  ( sizeof (struct inotify_event) )
 #define BUF_LEN     ( 1024 * ( EVENT_SIZE + 16 ) )

@@ -14,18 +14,25 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef FLB_OUT_JIRA_H
-#define FLB_OUT_JIRA_H
+#ifndef FLUENTBIT_H_
+#define FLUENTBIT_H_
 
-#include <json.h>
-
-#include "FluentBit.h"
-
-struct flb_jira_config {
-    int out_format;
-    int json_date_format;
-    flb_sds_t json_date_key;
-    const char *jira_script;
-};
-
+#ifdef __cplusplus
+extern "C" {
 #endif
+
+#include <fluent-bit.h>
+#include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_filter_plugin.h>
+#include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_time.h>
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* FLUENTBIT_H_ */

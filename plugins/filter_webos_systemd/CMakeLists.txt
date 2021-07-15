@@ -16,25 +16,14 @@
 #
 # LICENSE@@@
 
-pkg_check_modules(GLIB2 REQUIRED glib-2.0)
-include_directories(${GLIB2_INCLUDE_DIRS})
-
-pkg_check_modules(PBNJSON_CPP REQUIRED pbnjson_cpp)
-include_directories(${PBNJSON_CPP_INCLUDE_DIRS})
-
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../common)
 
-file(GLOB_RECURSE COMMON_C ${CMAKE_CURRENT_SOURCE_DIR}/../common/*.c)
-file(GLOB_RECURSE COMMON_CPP ${CMAKE_CURRENT_SOURCE_DIR}/../common/*.cpp)
 file(GLOB_RECURSE SRC_C ${CMAKE_CURRENT_SOURCE_DIR}/*.c)
 file(GLOB_RECURSE SRC_CPP ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 
 set(SRC
-  ${COMMON_C}
-  ${COMMON_CPP}
-  ${SRC_C}
-  ${SRC_CPP}
+    ${SRC_C}
+    ${SRC_CPP}
 )
 
-FLB_PLUGIN(filter_webos_systemd "${SRC}" "-lglib-2.0 -lpbnjson_cpp")
+FLB_PLUGIN(filter_webos_systemd "${SRC}" "")

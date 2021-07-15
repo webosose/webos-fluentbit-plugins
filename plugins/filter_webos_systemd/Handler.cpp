@@ -23,6 +23,7 @@
 #include "PerfRecordList.h"
 #include "util/File.h"
 #include "util/LinuxUtil.h"
+#include "util/Logger.h"
 #include "util/MSGPackUtil.h"
 #include "util/Time.h"
 
@@ -32,6 +33,9 @@ const int Handler::APPLAUNCHPERF_TIMEOUT_SEC = 60;
 const string Handler::REGEX_SetLifeStatus = "^\\[I\\]\\[RunningApp\\]\\[setLifeStatus\\]\\[([[:print:]]+)\\] Changed: ([[:print:]]+) \\(([[:alpha:]]+) ==> ([[:alpha:]]+)\\)";
 // [I][ApplicationManager][onAPICalled][APIRequest] API(/launch) Sender(com.webos.surfacemanager)
 const string Handler::REGEX_ApiLaunchCall = "^\\[I\\]\\[ApplicationManager\\]\\[onAPICalled\\]\\[APIRequest\\] API\\(/launch\\) Sender\\([[:print:]]+\\)";
+// [I][RuntimeInfo][initialize] DisplayId(-1) DeviceType() IsInContainer(false)
+// [I][RuntimeInfo][initialize] DisplayId(1) DeviceType(RSE) IsInContainer(true)
+const string Handler::REGEX_RuntimeInfo = "^\\[I\\]\\[RuntimeInfo\\]\\[initialize\\] DisplayId\\(([[:graph:]]+)\\) DeviceType\\([[:graph:]]*\\) IsInContainer\\([[:graph:]]*\\)";
 
 extern "C" int initHandler(struct flb_filter_instance *instance, struct flb_config *config, void *data)
 {
@@ -49,10 +53,11 @@ extern "C" int filter(const void *data, size_t bytes, const char *tag, int tag_l
 }
 
 Handler::Handler()
-    : m_filter_instance(NULL),
-      m_isRespawned(false),
-      m_appLaunchPerfRecords(APPLAUNCHPERF_TIMEOUT_SEC)
+    : m_isRespawned(false),
+      m_appLaunchPerfRecords(APPLAUNCHPERF_TIMEOUT_SEC),
+      m_isBootTimePerfDone(false)
 {
+    setClassName("Handler");
     m_deviceInfo = pbnjson::Object();
 }
 
@@ -62,19 +67,16 @@ Handler::~Handler()
 
 int Handler::onInit(struct flb_filter_instance *instance, struct flb_config *config, void *data)
 {
-    // Used in log flb_plg_XXX
-    m_filter_instance = instance;
-
     // Check isRespawned
     m_isRespawned = File::isFile(PATH_RESPAWNED);
     if (!m_isRespawned) {
         File::createFile(PATH_RESPAWNED);
     } else {
         if (-1 == clock_gettime(CLOCK_REALTIME, &m_respawnedTime)) {
-            flb_plg_error(m_filter_instance, "[%s] Failed to clock_gettime : %s", __FUNCTION__, strerror(errno));
+            PLUGIN_ERROR("Failed to clock_gettime : %s", strerror(errno));
             m_respawnedTime = { 0, 0 };
         }
-        flb_plg_info(m_filter_instance, "[%s] Respawned Timestamp(%ld.%03ld)", __FUNCTION__, m_respawnedTime.tv_sec, m_respawnedTime.tv_nsec/(1000*1000));
+        PLUGIN_INFO("Respawned Timestamp(%ld.%03ld)", m_respawnedTime.tv_sec, m_respawnedTime.tv_nsec/(1000*1000));
     }
 
     // Get device info
@@ -82,7 +84,7 @@ int Handler::onInit(struct flb_filter_instance *instance, struct flb_config *con
     gchar *output;
     GError *error = NULL;
     if (!g_spawn_command_line_sync("nyx-cmd DeviceInfo query nduid device_name", &output, NULL, NULL, &error)) {
-        flb_plg_error(m_filter_instance, "[%s] nyx-cmd error: %s", __FUNCTION__, error->message);
+        PLUGIN_ERROR("nyx-cmd error: %s", error->message);
         g_error_free(error);
         return -1;
     }
@@ -91,7 +93,7 @@ int Handler::onInit(struct flb_filter_instance *instance, struct flb_config *con
     (void)std::getline(outStream, deviceName, '\n');
     g_free(output);
     if (!g_spawn_command_line_sync("nyx-cmd OSInfo query webos_name webos_build_id", &output, NULL, NULL, &error)) {
-        flb_plg_error(m_filter_instance, "[%s] nyx-cmd error: %s", __FUNCTION__, error->message);
+        PLUGIN_ERROR("nyx-cmd error: %s", error->message);
         g_error_free(error);
         return -1;
     }
@@ -100,7 +102,7 @@ int Handler::onInit(struct flb_filter_instance *instance, struct flb_config *con
     (void)std::getline(outStream, webosBuildId, '\n');
     g_free(output);
     if (deviceId.empty() || deviceName.empty() || webosName.empty() || webosBuildId.empty()) {
-        flb_plg_error(m_filter_instance, "[%s] At least one of deviceId, deviceName, webosName, webosBuildId is empty", __FUNCTION__);
+        PLUGIN_ERROR("At least one of deviceId, deviceName, webosName, webosBuildId is empty");
         g_error_free(error);
         return -1;
     }
@@ -108,43 +110,60 @@ int Handler::onInit(struct flb_filter_instance *instance, struct flb_config *con
     m_deviceInfo.put("deviceName", deviceName);
     m_deviceInfo.put("webosName", webosName);
     m_deviceInfo.put("webosBuildId", webosBuildId);
-    flb_plg_info(m_filter_instance, "[%s] deviceId : %s", __FUNCTION__, deviceId.c_str());
-    flb_plg_info(m_filter_instance, "[%s] deviceName : %s", __FUNCTION__, deviceName.c_str());
-    flb_plg_info(m_filter_instance, "[%s] webosName : %s", __FUNCTION__, webosName.c_str());
-    flb_plg_info(m_filter_instance, "[%s] webosBuildId : %s", __FUNCTION__, webosBuildId.c_str());
+    PLUGIN_INFO("deviceId : %s", deviceId.c_str());
+    PLUGIN_INFO("deviceName : %s", deviceName.c_str());
+    PLUGIN_INFO("webosName : %s", webosName.c_str());
+    PLUGIN_INFO("webosBuildId : %s", webosBuildId.c_str());
 
+    bool isAppLaunchOn = true, isAppLaunchPerfOn = true, isLoginLogoutOn = true, isCrashOn = true, isBootTimePerfOn = true;
     struct mk_list *head;
     struct flb_kv *kv;
     /* Iterate all filter parameters */
     mk_list_foreach(head, &instance->properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
 
-        if (strcasecmp(kv->key, "applaunch") == 0 && strcasecmp(kv->val, "on") == 0) {
-            flb_plg_info(m_filter_instance, "[%s] Applaunch is On", __FUNCTION__);
-            m_syslogIdentifier2handler["sam"] = std::bind(&Handler::handleSam, this, std::placeholders::_1, std::placeholders::_2);
-            registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&Handler::handleSamAppLaunch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-        }
-        if (strcasecmp(kv->key, "applaunch_perf") == 0 && strcasecmp(kv->val, "on") == 0) {
-            flb_plg_info(m_filter_instance, "[%s] AppLaunch_perf is On", __FUNCTION__);
-            m_syslogIdentifier2handler["sam"] = std::bind(&Handler::handleSam, this, std::placeholders::_1, std::placeholders::_2);
-            registerRegexAndHandler(REGEX_ApiLaunchCall, std::bind(&Handler::handleSamAppLaunchPerf_begin, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-            registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&Handler::handleSamAppLaunchPerf_end, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-        }
-        if (strcasecmp(kv->key, "login_logout") == 0 && strcasecmp(kv->val, "on") == 0) {
-            flb_plg_info(m_filter_instance, "[%s] Login/Logout is On", __FUNCTION__);
-            m_syslogIdentifier2handler["pamlogin"] = std::bind(&Handler::handlePamlogin, this, std::placeholders::_1, std::placeholders::_2);
-        }
-        if (strcasecmp(kv->key, "crash") == 0 && strcasecmp(kv->val, "on") == 0) {
-            flb_plg_info(m_filter_instance, "[%s] Crash is On", __FUNCTION__);
-            m_syslogIdentifier2handler["systemd-coredump"] = std::bind(&Handler::handleSystemdCoredump, this, std::placeholders::_1, std::placeholders::_2);
-        }
+        if (strcasecmp(kv->key, "applaunch") == 0 && strcasecmp(kv->val, "off") == 0)
+            isAppLaunchOn = false;
+        if (strcasecmp(kv->key, "applaunch_perf") == 0 && strcasecmp(kv->val, "off") == 0)
+            isAppLaunchPerfOn = false;
+        if (strcasecmp(kv->key, "login_logout") == 0 && strcasecmp(kv->val, "off") == 0)
+            isLoginLogoutOn = false;
+        if (strcasecmp(kv->key, "crash") == 0 && strcasecmp(kv->val, "off") == 0)
+            isCrashOn = false;
+        if (strcasecmp(kv->key, "boottime_perf") == 0 && strcasecmp(kv->val, "off") == 0)
+            isBootTimePerfOn = false;
+    }
+    if (isAppLaunchOn) {
+        PLUGIN_INFO("Applaunch is On");
+        m_syslogIdentifier2handler["sam"] = std::bind(&Handler::handleSam, this, std::placeholders::_1, std::placeholders::_2);
+        registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&Handler::handleSamAppLaunch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    }
+    if (isAppLaunchPerfOn) {
+        PLUGIN_INFO("Applaunch_Perf is On");
+        m_syslogIdentifier2handler["sam"] = std::bind(&Handler::handleSam, this, std::placeholders::_1, std::placeholders::_2);
+        registerRegexAndHandler(REGEX_ApiLaunchCall, std::bind(&Handler::handleSamAppLaunchPerf_begin, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&Handler::handleSamAppLaunchPerf_end, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    }
+    if (isLoginLogoutOn) {
+        PLUGIN_INFO("Login/Logout is On");
+        m_syslogIdentifier2handler["pamlogin"] = std::bind(&Handler::handlePamlogin, this, std::placeholders::_1, std::placeholders::_2);
+    }
+    if (isCrashOn) {
+        PLUGIN_INFO("Crash is On");
+        m_syslogIdentifier2handler["systemd-coredump"] = std::bind(&Handler::handleSystemdCoredump, this, std::placeholders::_1, std::placeholders::_2);
+    }
+    if (isBootTimePerfOn) {
+        PLUGIN_INFO("Boottime_Perf is On");
+        m_syslogIdentifier2handler["sam"] = std::bind(&Handler::handleSam, this, std::placeholders::_1, std::placeholders::_2);
+        registerRegexAndHandler(REGEX_RuntimeInfo, std::bind(&Handler::handleSamBootTimePerf_begin, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&Handler::handleSamBootTimePerf_end, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     }
     return 0;
 }
 
 int Handler::onExit(void *context, struct flb_config *config)
 {
-    flb_plg_info(m_filter_instance, "[%s]", __FUNCTION__);
+    PLUGIN_INFO();
 
     return 0;
 }
@@ -173,12 +192,12 @@ int Handler::onFilter(const void *data, size_t bytes, const char *tag, int tag_l
          * it with the new fields added.
          */
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            flb_plg_warn(m_filter_instance, "[%s] Not array : %d", __FUNCTION__, result.data.type);
+            PLUGIN_WARN("Not array : %d", result.data.type);
             continue;
         }
         /* unpack the array of [timestamp, map] */
         if (-1 == flb_time_pop_from_msgpack(&tm, &result, &mapObj)) {
-            flb_plg_warn(m_filter_instance, "[%s] Failed in flb_time_pop_from_msgpack", __FUNCTION__);
+            PLUGIN_WARN("Failed in flb_time_pop_from_msgpack");
             continue;
         }
         if (m_isRespawned && tm.tm < m_respawnedTime) {
@@ -186,7 +205,7 @@ int Handler::onFilter(const void *data, size_t bytes, const char *tag, int tag_l
         }
         /* map should be map type */
         if (mapObj->type != MSGPACK_OBJECT_MAP) {
-            flb_plg_warn(m_filter_instance, "[%s] Not map : %d", __FUNCTION__, mapObj->type);
+            PLUGIN_WARN("Not map : %d", mapObj->type);
             continue;
         }
 
@@ -253,14 +272,14 @@ void Handler::handleSamAppLaunch(smatch& match, msgpack_unpacked* result, msgpac
             accountId = LinuxUtil::getUsername(stoul(uid, nullptr, 10));
         }
     } catch (exception& ex) {
-        flb_plg_warn(m_filter_instance, "[%s] Cannot convert uid %s: %s", __FUNCTION__, uid.c_str(), ex.what());
+        PLUGIN_WARN("Cannot convert uid %s: %s", uid.c_str(), ex.what());
     }
     MSGPackUtil::putValue(packer, "type", "appLaunch");
     JValue appLaunch = Object();
     appLaunch.put("accountId", accountId);
     appLaunch.put("appId", appId);
     MSGPackUtil::putValue(packer, "appLaunch", appLaunch);
-    flb_plg_info(m_filter_instance, "[appLaunch] %s", appLaunch.stringify().c_str());
+    PLUGIN_INFO("[appLaunch] %s", appLaunch.stringify().c_str());
 }
 
 void Handler::handleSamAppLaunchPerf_begin(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
@@ -270,12 +289,12 @@ void Handler::handleSamAppLaunchPerf_begin(smatch& match, msgpack_unpacked* resu
     flb_time_pop_from_msgpack(&timestamp, result, &map);
 
     m_appLaunchPerfRecords.removeExpired(&timestamp);
-    flb_plg_debug(m_filter_instance, "[%s] Remove expired : Remain(%ld, %ld)", __FUNCTION__, m_appLaunchPerfRecords.getNoContextItems().size(), m_appLaunchPerfRecords.getContext2itemMap().size());
+    PLUGIN_DEBUG("Remove expired : Remain(%ld, %ld)", m_appLaunchPerfRecords.getNoContextItems().size(), m_appLaunchPerfRecords.getContext2itemMap().size());
 
     shared_ptr<PerfRecord> perfRecord = make_shared<PerfRecord>();
     perfRecord->addTimestamp("begin", timestamp);
     m_appLaunchPerfRecords.add(perfRecord);
-    flb_plg_debug(m_filter_instance, "[%s] Timestamp(%ld.%03ld)", __FUNCTION__, timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000));
+    PLUGIN_DEBUG("Timestamp(%ld.%03ld)", timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000));
 }
 
 void Handler::handleSamAppLaunchPerf_end(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
@@ -291,10 +310,10 @@ void Handler::handleSamAppLaunchPerf_end(smatch& match, msgpack_unpacked* result
 
     // [I][RunningApp][setLifeStatus][60c35ebf-32f8-48fb-94f0-a58b4106f8d30] Changed: com.webos.app.test.smack.web (stop => splashing)
     if (prevState == "stop" && currState == "splashing") {
-        flb_plg_debug(m_filter_instance, "[%s] Timestamp(%ld.%03ld) %s (%s => %s) %s", __FUNCTION__, timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000), instanceId.c_str(), prevState.c_str(), currState.c_str(), appId.c_str());
+        PLUGIN_DEBUG("Timestamp(%ld.%03ld) %s (%s => %s) %s", timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000), instanceId.c_str(), prevState.c_str(), currState.c_str(), appId.c_str());
         shared_ptr<PerfRecord> perfRecord = m_appLaunchPerfRecords.get(instanceId);
         if (!perfRecord) {
-            flb_plg_error(m_filter_instance, "[%s] Timestamp(%ld.%03ld) Not found : %s", __FUNCTION__, timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000), string(match[0]).c_str());
+            PLUGIN_ERROR("Timestamp(%ld.%03ld) Not found : %s", timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000), string(match[0]).c_str());
             return;
         }
         // There is no need to add a timestamp to perfItem.
@@ -307,15 +326,15 @@ void Handler::handleSamAppLaunchPerf_end(smatch& match, msgpack_unpacked* result
     if (prevState != "launching" || currState != "foreground") {
         return;
     }
-    flb_plg_debug(m_filter_instance, "[%s] Timestamp(%ld.%03ld) %s (%s => %s) %s", __FUNCTION__, timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000), instanceId.c_str(), prevState.c_str(), currState.c_str(), appId.c_str());
+    PLUGIN_DEBUG("Timestamp(%ld.%03ld) %s (%s => %s) %s", timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000), instanceId.c_str(), prevState.c_str(), currState.c_str(), appId.c_str());
     shared_ptr<PerfRecord> perfRecord = m_appLaunchPerfRecords.get(instanceId);
     if (!perfRecord) {
-        flb_plg_error(m_filter_instance, "[%s] Timestamp(%ld.%03ld) Not found : %s", __FUNCTION__, timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000), string(match[0]).c_str());
+        PLUGIN_ERROR("Timestamp(%ld.%03ld) Not found : %s", timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000), string(match[0]).c_str());
         return;
     }
     perfRecord->addTimestamp("end", timestamp);
     if (!perfRecord->getElapsedTime("", "", &total)) {
-        flb_plg_error(m_filter_instance, "[%s] Failed to get elapsed time", __FUNCTION__);
+        PLUGIN_ERROR("Failed to get elapsed time");
         return;
     }
     m_appLaunchPerfRecords.remove(instanceId);
@@ -330,7 +349,7 @@ void Handler::handleSamAppLaunchPerf_end(smatch& match, msgpack_unpacked* result
             accountId = LinuxUtil::getUsername(stoul(uid, nullptr, 10));
         }
     } catch (exception& ex) {
-        flb_plg_warn(m_filter_instance, "[%s] Cannot convert uid %s: %s", __FUNCTION__, uid.c_str(), ex.what());
+        PLUGIN_WARN("Cannot convert uid %s: %s", uid.c_str(), ex.what());
     }
     MSGPackUtil::putValue(packer, "type", "appLaunchPerf");
     JValue appLaunchPerf = Object();
@@ -338,7 +357,76 @@ void Handler::handleSamAppLaunchPerf_end(smatch& match, msgpack_unpacked* result
     appLaunchPerf.put("appId", appId);
     appLaunchPerf.put("totalTimeMs", (int)(flb_time_to_double(&total)*1000+0.5)); // round-off
     MSGPackUtil::putValue(packer, "appLaunchPerf", appLaunchPerf);
-    flb_plg_info(m_filter_instance, "[appLaunchPerf] %s", appLaunchPerf.stringify().c_str());
+    PLUGIN_INFO("[appLaunchPerf] %s", appLaunchPerf.stringify().c_str());
+}
+
+void Handler::handleSamBootTimePerf_begin(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
+{
+    if (m_isBootTimePerfDone || m_isRespawned)
+        return;
+    string pid;
+    if (!MSGPackUtil::getValue(&result->data.via.array.ptr[1], "_PID", pid))
+        return;
+
+    const string& displayId = match[1];
+    // count the number of displays
+    m_displayId2bootdone[displayId] = make_pair(pid, false);
+    PLUGIN_DEBUG("displayId(%s)", displayId.c_str());
+}
+
+void Handler::handleSamBootTimePerf_end(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
+{
+    if (m_isBootTimePerfDone || m_isRespawned)
+        return;
+    if ("foreground" != match[4])
+        return;
+    string pid;
+    if (!MSGPackUtil::getValue(&result->data.via.array.ptr[1], "_PID", pid))
+        return;
+
+    bool isBootdoneOnAllDisplays = true;
+    msgpack_object *map;
+    flb_time loggedRealtime;
+    flb_time_pop_from_msgpack(&loggedRealtime, result, &map);
+
+    for (auto& kv : m_displayId2bootdone) {
+        if (kv.second.first == pid) {
+            kv.second.second = true;
+        }
+        if (!kv.second.second) {
+            isBootdoneOnAllDisplays = false;
+        }
+    }
+    if (!isBootdoneOnAllDisplays) {
+        return;
+    }
+
+    JValue bootTimePerf = Object();
+    flb_time currentRealtime, currentMonotonic;
+    flb_time elapsedTimeSinceLogged;
+    flb_time monotonicAtLogged;
+    if (-1 == clock_gettime(CLOCK_REALTIME, &currentRealtime.tm)) {
+        PLUGIN_ERROR("Failed to clock_gettime : %s", strerror(errno));
+        goto Done;
+    }
+    if (-1 == clock_gettime(CLOCK_MONOTONIC, &currentMonotonic.tm)) {
+        PLUGIN_ERROR("Failed to clock_gettime : %s", strerror(errno));
+        goto Done;
+    }
+    // Analyzing the logs, the kernel starts with 0 monotonic time.
+    // So, the monotonic time at the point of logged is considered as the boot time.
+    flb_time_diff(&currentRealtime, &loggedRealtime, &elapsedTimeSinceLogged);
+    flb_time_diff(&currentMonotonic, &elapsedTimeSinceLogged, &monotonicAtLogged);
+
+    if (!packCommonMsg(result, &loggedRealtime, packer, 4))
+        goto Done;
+    MSGPackUtil::putValue(packer, "type", "bootTimePerf");
+    bootTimePerf.put("totalTimeMs", (int)(flb_time_to_double(&monotonicAtLogged)*1000+0.5)); // round-off
+    MSGPackUtil::putValue(packer, "bootTimePerf", bootTimePerf);
+    PLUGIN_INFO("[bootTimePerf] %s", bootTimePerf.stringify().c_str());
+
+Done:
+    m_isBootTimePerfDone = true;
 }
 
 void Handler::handleSam(msgpack_unpacked* result, msgpack_packer* packer)
@@ -379,7 +467,7 @@ void Handler::handlePamlogin(msgpack_unpacked* result, msgpack_packer* packer)
     typeObj.put("accountId", string(match[2]));
     MSGPackUtil::putValue(packer, "type", typeStr);
     MSGPackUtil::putValue(packer, typeStr, typeObj);
-    flb_plg_info(m_filter_instance, "[%s] %s", typeStr.c_str(), typeObj.stringify().c_str());
+    PLUGIN_INFO("[%s] %s", typeStr.c_str(), typeObj.stringify().c_str());
 }
 
 void Handler::handleSystemdCoredump(msgpack_unpacked* result, msgpack_packer* packer)
@@ -406,5 +494,5 @@ void Handler::handleSystemdCoredump(msgpack_unpacked* result, msgpack_packer* pa
     crash.put("exe", exe);
     crash.put("signal", signalNo);
     MSGPackUtil::putValue(packer, "crash", crash);
-    flb_plg_info(m_filter_instance, "[crash] %s", crash.stringify().c_str());
+    PLUGIN_INFO("[crash] %s", crash.stringify().c_str());
 }

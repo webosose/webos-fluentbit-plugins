@@ -13,6 +13,9 @@ from webos_common import Platform
 DEFAULT_JOURNALD='/tmp/webos_journald.txt'
 DEFAULT_INFO='/tmp/webos_info.txt'
 DEFAULT_DUMP='/tmp/webos_dump.txt'
+DEFAULT_MESSAGES = '/tmp/webos_messages.tgz'
+DEFAULT_SCREENSHOT = '/tmp/webos_screenshot.jpg'
+
 
 class WebOSCapture:
     _instance = None
@@ -96,12 +99,36 @@ class WebOSCapture:
         output = subprocess.check_output(command, shell=True, encoding='utf-8')
         return
 
+    def capture_messages(self, file=DEFAULT_MESSAGES):
+        message_files = ['var/log/' + x for x in os.listdir("/var/log") if x[:8] == 'messages']
+        if len(message_files) == 0:
+            common.info('/var/log/messages does not exist')
+            return
+        command = 'tar zcf {} -C / {}'.format(file, ' '.join(message_files))
+        common.debug(command)
+        subprocess.check_output(command, shell=True, encoding='utf-8')
+        print('Capture messages : {}'.format(file))
+        return
+
+    def capture_screenshot(self, file=DEFAULT_SCREENSHOT):
+        if NYX.instance().get_info()['device_name'] == 'raspberrypi4':
+            args = '{{"output":"{}","format":"JPG"}}'.format(file)
+            command = "luna-send -n 1 luna://com.webos.surfacemanager/captureCompositorOutput '{}'".format(args)
+        else:
+            args = '{{"path":"{}","method":"DISPLAY","width":1920,"height":1080,"format":"JPEG""}}'
+            command = "luna-send -n 1 luna://com.webos.service.capture/executeOneShot '{}'".format(args)
+        subprocess.check_output(command, shell=True, encoding='utf-8')
+        print('Capture screenshot : {}'.format(file))
+        return
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=os.path.basename(__file__))
     parser.add_argument('--journald', type=str, help='capture journald')
     parser.add_argument('--sysinfo',  type=str, help='capture sysinfo')
     parser.add_argument('--coredump', type=str, nargs='*', help='capture coredump info')
+    parser.add_argument('--messages', type=str, help='capture /var/log/messages*')
+    parser.add_argument('--screenshot', type=str, help='capture screenshot')
 
     args = parser.parse_args()
     if args.journald is not None:
@@ -110,3 +137,7 @@ if __name__ == "__main__":
         WebOSCapture.instance().capture_sysinfo(args.sysinfo)
     if args.coredump is not None and len(args.coredump) == 2:
         WebOSCapture.instance().capture_coredump(args.coredump[0], args.coredump[1])
+    if args.messages is not None:
+        WebOSCapture.instance().capture_messages(args.messages)
+    if args.screenshot is not None:
+        WebOSCapture.instance().capture_screenshot(args.screenshot)

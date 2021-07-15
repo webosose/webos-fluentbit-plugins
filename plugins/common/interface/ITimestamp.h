@@ -26,12 +26,10 @@ public:
         : m_startTime(""),
           m_endTime("")
     {
-
     }
 
     virtual ~ITimestamp()
     {
-
     }
 
     void start()
@@ -44,12 +42,12 @@ public:
         m_endTime = Time::getCurrentTime();
     }
 
-    const string& getStartTime()
+    const string& getStartTime() const
     {
         return m_startTime;
     }
 
-    const string& getEndTime()
+    const string& getEndTime() const
     {
         return m_endTime;
     }
@@ -57,6 +55,7 @@ public:
 protected:
     string m_startTime;
     string m_endTime;
+
 };
 
 #endif /* INTERFACE_ITIMESTAMP_H_ */

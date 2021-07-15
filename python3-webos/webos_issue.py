@@ -15,6 +15,9 @@ from webos_uploader import WebOSUploader
 COMPONENT_TEMP = 'Temp'
 DEFAULT_JOURNALD = '/tmp/webos_journald.txt'
 DEFAULT_SYSINFO = '/tmp/webos_info.txt'
+DEFAULT_MESSAGES = '/tmp/webos_messages.tgz'
+DEFAULT_SCREENSHOT = '/tmp/webos_screenshot.jpg'
+PROJECT_KEY = 'WRN'
 
 
 class WebOSIssue:
@@ -43,10 +46,10 @@ class WebOSIssue:
 
         fields = {
             "project": {
-                "key": "PLAT"
+                "key": PROJECT_KEY
             },
-            "customfield_10101": NYX.instance().get_info()['webos_build_id'],
-            "customfield_10400": [
+            "customfield_18405": NYX.instance().get_info()['webos_build_id'],
+            "customfield_18122": [
                 {
                     "value": NYX.instance().get_device_name(),
                 }
@@ -74,11 +77,16 @@ class WebOSIssue:
             if summary is None:
                 common.error("'summary' is required")
                 return
-            if self.check_summary(summary) is True:
-                common.info("'{}' is already created".format(summary))
+            issue = self.check_summary(summary)
+            if issue is not None:
+                common.info("'{}' is already created - {}".format(summary, issue))
+                self._jira.update_issue_field(issue, fields)
+                return None
+            issue = self.check_fixed_in(summary)
+            if issue is not None:
+                common.info("'{}' is already fixed - {}".format(summary, issue))
                 return None
         return self._jira.issue_create(fields)
-
 
     def guess_component(self, summary):
         command = "unknown"
@@ -86,6 +94,8 @@ class WebOSIssue:
             command = summary[summary.find('/usr/sbin'):]
         elif summary.find('/usr/bin') > 0:
             command = summary[summary.find('/usr/bin'):]
+        if command.find(' ') > 0:
+            command = command[:command.find(' ')]
         relations = common.get_value('customfield', 'relations')
         if command in relations:
             return relations[command]
@@ -111,11 +121,31 @@ class WebOSIssue:
     def check_summary(self, summary):
         summary = summary.replace("[","\\\\[")
         summary = summary.replace("]","\\\\]")
-        JQL = 'project = PLAT AND summary ~ "{}" AND issuetype = Bug AND status not in (Closed, Verified)'.format(summary)
+        JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug AND status not in (Closed, Verify)'.format(PROJECT_KEY, summary)
+        common.debug(JQL)
         response = self._jira.jql(JQL)
         if len(response['issues']) > 0:
-            return True
-        return False
+            return response['issues'][0]['key']
+        return None
+
+    def check_fixed_in(self, summary):
+        summary = summary.replace("[","\\\\[")
+        summary = summary.replace("]","\\\\]")
+        JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug AND "Fixed In" is not Empty ORDER BY "Fixed In" DESC'.format(PROJECT_KEY, summary)
+        common.debug(JQL)
+        response = self._jira.jql(JQL)
+        if len(response['issues']) == 0:
+            return None
+        try:
+            fixed_in = int(response['issues'][0]['fields']['customfield_12415'])
+            common.info('Fixed In : {}'.format(fixed_in))
+            build_id = int(NYX.instance().get_info()['webos_build_id'])
+            common.info('Build Id : {}'.format(build_id))
+            if (fixed_in > build_id):
+                return response['issues'][0]['key']
+        except Exception as ex:
+            print(ex)
+        return None
 
     def attach_files(self, key, files):
         if files is None:
@@ -143,6 +173,10 @@ class WebOSIssue:
                 desc = "SYS_LOG"
             elif file == DEFAULT_SYSINFO:
                 desc = "SYS_INFO"
+            elif file == DEFAULT_MESSAGES:
+                desc = "MESSAGES"
+            elif file == DEFAULT_SCREENSHOT:
+                desc = "SCREENSHOT"
 
             basename = os.path.basename(file)
             if basename.find('crashreport.txt') > 0:
@@ -161,6 +195,11 @@ class WebOSIssue:
 
     def get_jira(self):
         return self._jira
+
+    def show_component_registeredin_project(self, project_key=PROJECT_KEY):
+        components = self._jira.get_project_components(project_key)
+        for comp in components:
+            print(comp['name'])
 
 
 if __name__ == "__main__":
@@ -182,6 +221,8 @@ if __name__ == "__main__":
     parser.add_argument('--show-id',          action='store_true', help='Show ID and PASS')
     parser.add_argument('--show-component',   action='store_true', help='Show all components')
     parser.add_argument('--show-devicename',  action='store_true', help='Show all supported devices')
+    parser.add_argument('--attach-crashcounter', action='store_true', help='Attach crashcounter in description')
+    parser.add_argument('--show-component-registeredin-project', action='store_true', help='Show all components registered in project')
 
     args = parser.parse_args()
 
@@ -212,10 +253,20 @@ if __name__ == "__main__":
             common.error("'id' and 'pw' are needed")
             exit(1)
 
+    if args.show_component_registeredin_project:
+        WebOSIssue.instance().show_component_registeredin_project()
+        exit(1)
+
     key = args.key
     upload_files = args.upload_files
     if upload_files is None:
         upload_files = []
+
+    if args.attach_crashcounter:
+        crashcounter = WebOSUploader.instance().increase_counter(args.summary)
+        if args.description is None:
+            args.description = ''
+        args.description = '<p>Number of times this crash occurred : {}.</p>{}'.format(crashcounter, args.description)
 
     if key is not None:
         # handle 'UPDATE' mode
@@ -230,7 +281,11 @@ if __name__ == "__main__":
             component = WebOSIssue.instance().guess_component(args.summary)
         else:
             component = args.component
-        result = WebOSIssue.instance().create_issue(args.summary, args.description, args.unique_summary, component)
+        try:
+            result = WebOSIssue.instance().create_issue(args.summary, args.description, args.unique_summary, component)
+        except Exception as ex:
+            common.error(ex.response.text)
+            raise ex
         if result is None or 'key' not in result:
             common.error("Failed to create new ticket")
             exit(1)
@@ -239,10 +294,14 @@ if __name__ == "__main__":
 
         if args.without_sysinfo is False:
             WebOSCapture.instance().capture_journald(DEFAULT_JOURNALD)
-            WebOSCapture.instance().capture_sysinfo()
+            WebOSCapture.instance().capture_sysinfo(DEFAULT_SYSINFO)
+            WebOSCapture.instance().capture_messages(DEFAULT_MESSAGES)
 
             upload_files.append(DEFAULT_JOURNALD)
             upload_files.append(DEFAULT_SYSINFO)
+            upload_files.append(DEFAULT_MESSAGES)
+        WebOSCapture.instance().capture_screenshot(DEFAULT_SCREENSHOT)
+        upload_files.append(DEFAULT_SCREENSHOT)
     else:
         common.info("'key' or 'summary' is needed")
         exit(1)
@@ -255,3 +314,4 @@ if __name__ == "__main__":
 
     if args.comment is not None:
         WebOSIssue.instance().add_comment(key, args.comment)
+

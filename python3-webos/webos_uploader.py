@@ -4,7 +4,11 @@ import argparse
 import os
 import requests
 
-DEFAULT_SERVER = 'http://10.178.84.116:3002/upload'
+import webos_common as common
+
+DEFAULT_SERVER = 'http://10.178.84.116:3002'
+DEFAULT_SERVER_UPLOAD = DEFAULT_SERVER + '/upload'
+DEFAULT_SERVER_CRASH = DEFAULT_SERVER + '/crash'
 
 class WebOSUploader:
     _instance = None
@@ -32,7 +36,7 @@ class WebOSUploader:
             A.append(file)
         return A, B
 
-    def upload_files(self, key, upload_files, url=DEFAULT_SERVER):
+    def upload_files(self, key, upload_files, url=DEFAULT_SERVER_UPLOAD):
         if len(upload_files) == 0:
             return []
 
@@ -47,11 +51,19 @@ class WebOSUploader:
         else:
             return []
 
+    def increase_counter(self, summary, url=DEFAULT_SERVER_CRASH):
+        summary = summary[summary.find(' '):].strip()
+        summary = requests.utils.quote(summary, safe='')
+        url = url + '/' + summary
+        common.debug('PATCH {}'.format(url))
+        response = requests.patch(url)
+        common.debug('{}, count {}'.format(response.status_code, response.text))
+        return response.text
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=os.path.basename(__file__))
     parser.add_argument('--key',           type=str, help='jira key (ex : PLAT-XXXXX)')
-    parser.add_argument('--url',           type=str, default=DEFAULT_SERVER, help='File server URL')
+    parser.add_argument('--url',           type=str, default=DEFAULT_SERVER_UPLOAD, help='File server URL')
     parser.add_argument('--upload-files',  type=str, nargs='*', help='Files for uploading.')
 
     args = parser.parse_args()
@@ -67,3 +79,4 @@ if __name__ == "__main__":
         print("[OK] '{}' : '{}'".format(file, server_files[i]))
     for file in false_files:
         print("[NO] '{}'".format(file))
+

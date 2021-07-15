@@ -18,12 +18,21 @@
 
 include(FindPkgConfig)
 
-pkg_check_modules(JSON REQUIRED json-c)
-include_directories(${JSON_INCLUDE_DIRS})
-webos_add_compiler_flags(ALL ${JSON_CFLAGS_OTHER})
+pkg_check_modules(JSONC REQUIRED json-c)
+include_directories(${JSONC_INCLUDE_DIRS})
 
-set(src
-    jira.c
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+
+file(GLOB_RECURSE SRC_C ${CMAKE_CURRENT_SOURCE_DIR}/*.c)
+file(GLOB_RECURSE SRC_CPP ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+
+set(SRC
+    ${SRC_C}
+    ${SRC_CPP}
 )
 
-FLB_PLUGIN(out_jira "${src}" ${JSON_LDFLAGS})
+set(LIB
+    ${JSONC_LDFLAGS}
+)
+
+FLB_PLUGIN(out_jira "${SRC}" "${LIB}")

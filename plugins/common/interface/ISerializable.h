@@ -20,8 +20,8 @@ using namespace pbnjson;
 
 class ISerializable {
 public:
-    ISerializable(){};
-    virtual ~ISerializable(){};
+    ISerializable(){}
+    virtual ~ISerializable(){}
 
     virtual bool fromJson(const JValue& json)
     {
@@ -29,7 +29,7 @@ public:
         return true;
     }
 
-    virtual bool toJson(JValue& json)
+    virtual bool toJson(JValue& json) const
     {
         json = m_json.duplicate();
         return true;

@@ -14,16 +14,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_pack.h>
-#include <fluent-bit/flb_engine.h>
-#include <fluent-bit/flb_time.h>
-#include <fluent-bit/flb_parser.h>
-#include <fluent-bit/flb_error.h>
-
-#include <msgpack.h>
+#include "in_coredump.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,7 +26,7 @@
 #include <sys/types.h>
 #include <sys/xattr.h>
 
-#include "in_coredump.h"
+#include "util/Logger.h"
 
 #define PATH_COREDUMP_DIRECTORY "/var/lib/systemd/coredump"
 
@@ -60,9 +51,11 @@ struct time_information
 
 struct time_information default_time;
 
+extern bool getCrashedFunction(const char* crashreport, char* crashed_func);
+
 static int init_default_time()
 {
-    flb_info("[in_coredump][%s] init default time information (%s) file", __FUNCTION__, DEFAULT_TIME_FILE);
+    PLUGIN_INFO("init default time information (%s) file", DEFAULT_TIME_FILE);
 
     struct stat def_stat;
 
@@ -70,7 +63,7 @@ static int init_default_time()
     struct tm *def_tm_ctime;
 
     if (lstat(DEFAULT_TIME_FILE, &def_stat) == -1) {
-        flb_error("[in_coredump][%s] Failed lstat (%s)", __FUNCTION__, DEFAULT_TIME_FILE);
+        PLUGIN_ERROR("Failed lstat (%s)", DEFAULT_TIME_FILE);
         return -1;
     }
     def_tm_mtime = localtime(&def_stat.st_mtime);
@@ -83,7 +76,7 @@ static int init_default_time()
     default_time.change_mon = def_tm_ctime->tm_mon + 1;
     default_time.change_mday = def_tm_ctime->tm_mday;
 
-    flb_info("[in_coredump][%s] Default time information mtime (%d-%d-%d), ctime (%d-%d-%d)", __FUNCTION__, \
+    PLUGIN_INFO("Default time information mtime (%d-%d-%d), ctime (%d-%d-%d)", \
             default_time.modify_year, default_time.modify_mon, default_time.modify_mday, \
             default_time.change_year, default_time.change_mon, default_time.change_mday);
 
@@ -112,34 +105,34 @@ static int parse_coredump_comm(const char *full, char *comm, char *pid, char *ex
     char exe_str[STR_LEN];
     char *buf, *key, *val;
 
-    flb_info("[in_coredump][%s] full param : (%s)", __FUNCTION__, full);
+    PLUGIN_INFO("full param : (%s)", full);
 
     // Determine the length of the buffer needed.
     buflen = listxattr(full, NULL, 0);
     if (buflen == -1) {
-        flb_error("[in_coredump][%s] failed listxattr", __FUNCTION__);
+        PLUGIN_ERROR("failed listxattr");
         return -1;
     }
     if (buflen == 0) {
-        flb_error("[in_coredump][%s] no attributes", __FUNCTION__);
+        PLUGIN_ERROR("no attributes");
         return -1;
     }
 
     // Allocate the buffer.
     buf = malloc(buflen);
     if (buf == NULL) {
-        flb_error("[in_coredump][%s] failed malloc", __FUNCTION__);
+        PLUGIN_ERROR("failed malloc");
         return -1;
     }
 
     // Copy the list of attribute keys to the buffer
     buflen = listxattr(full, buf, buflen);
-    flb_debug("[in_coredump][%s] buflen : (%d)", __FUNCTION__, buflen);
+    PLUGIN_DEBUG("buflen : (%d)", buflen);
 
     if (buflen == -1) {
         return -1;
     } else if (buflen == 0) {
-        flb_error("[in_coredump][%s] no attributes full : (%s)", __FUNCTION__, full);
+        PLUGIN_ERROR("no attributes full : (%s)", full);
         return -1;
     }
 
@@ -147,31 +140,31 @@ static int parse_coredump_comm(const char *full, char *comm, char *pid, char *ex
     while (0 < buflen) {
 
         // Output attribute key
-        flb_debug("[in_coredump][%s] key : (%s)", __FUNCTION__, key);
+        PLUGIN_DEBUG("key : (%s)", key);
 
         // Determine length of the value
         vallen = getxattr(full, key, NULL, 0);
 
         if (vallen == -1) {
-            flb_error("[in_coredump][%s] failed getxattr", __FUNCTION__);
+            PLUGIN_ERROR("failed getxattr");
         } else if (vallen == 0) {
-            flb_error("[in_coredump][%s] no value", __FUNCTION__);
+            PLUGIN_ERROR("no value");
         } else {
             val = malloc(vallen + 1);
             if (val == NULL) {
-                flb_error("[in_coredump][%s] failed malloc", __FUNCTION__);
+                PLUGIN_ERROR("failed malloc");
                 return -1;
             }
 
             // Copy value to buffer
             vallen = getxattr(full, key, val, vallen);
             if (vallen == -1) {
-                flb_error("[in_coredump][%s] failed getxattr", __FUNCTION__);
+                PLUGIN_ERROR("failed getxattr");
             } else {
                 // Check attribute value (exe, pid)
                 val[vallen] = 0;
-                flb_debug("[in_coredump][%s] val : (%s)", __FUNCTION__, val);
-                
+                PLUGIN_DEBUG("val : (%s)", val);
+
                 if (strstr(key, "pid") != NULL)
                     strcpy(pid, val);
                 if (strstr(key, "exe") != NULL)
@@ -192,7 +185,7 @@ static int parse_coredump_comm(const char *full, char *comm, char *pid, char *ex
     char *ptr = strtok(exe_str, "/");
     while (ptr != NULL)
     {
-        flb_debug("[in_coredump][%s] ptr : (%s)", __FUNCTION__, ptr);
+        PLUGIN_DEBUG("ptr : (%s)", ptr);
         if (strcmp(ptr, "usr") != 0 && strcmp(ptr, "bin") != 0 && strcmp(ptr, "sbin") != 0) {
             strcpy(comm, ptr);
             break;
@@ -205,7 +198,7 @@ static int parse_coredump_comm(const char *full, char *comm, char *pid, char *ex
 
 static int check_exe_time(const char *exe)
 {
-    flb_info("[in_coredump][%s] check exe (%s) file", __FUNCTION__, exe);
+    PLUGIN_INFO("check exe (%s) file", exe);
 
     struct stat exe_stat;
 
@@ -215,14 +208,14 @@ static int check_exe_time(const char *exe)
     struct time_information exe_time;
 
     if (lstat(exe, &exe_stat) == -1) {
-        flb_error("[in_coredump][%s] Failed lstat (%s)", __FUNCTION__, exe);
+        PLUGIN_ERROR("Failed lstat (%s)", exe);
         return -1;
     }
 
     exe_tm_mtime = localtime(&exe_stat.st_mtime);
     exe_tm_ctime = localtime(&exe_stat.st_ctime);
-    flb_debug("[in_coredump][%s] Exe Modify time (%s), Change time (%s)", __FUNCTION__, ctime(&exe_stat.st_mtime), ctime(&exe_stat.st_ctime));
-    flb_debug("[in_coredump][%s] Exe Modify time (%d %d %d), Change time (%d %d %d)", __FUNCTION__, exe_tm_mtime->tm_year + 1900, exe_tm_mtime->tm_mon + 1, exe_tm_mtime->tm_mday, exe_tm_ctime->tm_year + 1900, exe_tm_ctime->tm_mon + 1, exe_tm_ctime->tm_mday);
+    PLUGIN_DEBUG("Exe Modify time (%s), Change time (%s)", ctime(&exe_stat.st_mtime), ctime(&exe_stat.st_ctime));
+    PLUGIN_DEBUG("Exe Modify time (%d %d %d), Change time (%d %d %d)", exe_tm_mtime->tm_year + 1900, exe_tm_mtime->tm_mon + 1, exe_tm_mtime->tm_mday, exe_tm_ctime->tm_year + 1900, exe_tm_ctime->tm_mon + 1, exe_tm_ctime->tm_mday);
 
     exe_time.modify_year = exe_tm_mtime->tm_year + 1900;
     exe_time.modify_mon = exe_tm_mtime->tm_mon + 1;
@@ -231,7 +224,7 @@ static int check_exe_time(const char *exe)
     exe_time.change_mon = exe_tm_ctime->tm_mon + 1;
     exe_time.change_mday = exe_tm_ctime->tm_mday;
 
-    flb_info("[in_coredump][%s] Exe time information mtime (%d-%d-%d), ctime (%d-%d-%d)", __FUNCTION__, \
+    PLUGIN_INFO("Exe time information mtime (%d-%d-%d), ctime (%d-%d-%d)", \
             exe_time.modify_year, exe_time.modify_mon, exe_time.modify_mday, \
             exe_time.change_year, exe_time.change_mon, exe_time.change_mday);
 
@@ -250,7 +243,7 @@ static int create_crashreport(const char *script, const char *corefile, const ch
 
     char command[STR_LEN];
     sprintf(command, "%s --coredump \'%s\' %s", script, corefile, crashreport);
-    flb_info("[in_coredump][%s] command : %s", __FUNCTION__, command);
+    PLUGIN_INFO("command : %s", command);
 
     int ret = system(command);
 
@@ -273,22 +266,24 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
     char exe[STR_LEN];
     char corefile[STR_LEN];
     char crashreport[STR_LEN];
+    char crashed_func[STR_LEN];
     char upload_files[STR_LEN];
     char summary[STR_LEN];
     int len;
     char distro_result[STR_LEN];
+    char temp[STR_LEN];
 
     int cnt = 0;
     int i;
 
     if (init_default_time() == -1) {
-        flb_error("[in_coredump][%s] Failed to initialize default time information", __FUNCTION__);
+        PLUGIN_ERROR("Failed to initialize default time information");
     }
 
     bytes = read(ctx->fd, ctx->buf + ctx->buf_len, sizeof(ctx->buf) - ctx->buf_len - 1);
 
     if (bytes <= 0) {
-        flb_error("[in_coredump][%s] Failed to read data", __FUNCTION__);
+        PLUGIN_ERROR("Failed to read data");
         flb_input_collector_pause(ctx->coll_fd, ctx->ins);
         flb_engine_exit(config);
         return -1;
@@ -302,13 +297,13 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
     }
     distro_result[cnt] = '\0';
 
-    flb_info("[in_coredump][%s] modified distro from (%s) to (%s)", __FUNCTION__, WEBOS_TARGET_DISTRO, distro_result);
+    PLUGIN_INFO("modified distro from (%s) to (%s)", WEBOS_TARGET_DISTRO, distro_result);
 
     ctx->buf_start = ctx->buf_len;
     ctx->buf_len += bytes;
     ctx->buf[ctx->buf_len] = '\0';
 
-    flb_info("[in_coredump][%s] Catch the new coredump event", __FUNCTION__);
+    PLUGIN_INFO("Catch the new coredump event");
 
     /* Initialize local msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -318,49 +313,60 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         event=(struct inotify_event*) &ctx->buf[ctx->buf_start];
 
         if (event->len == 0) {
-            flb_error("[in_coredump][%s] event length is 0", __FUNCTION__);
+            PLUGIN_ERROR("event length is 0");
             break;
         }
 
         if (!(event->mask & IN_CREATE)) {
-            flb_error("[in_coredump][%s] not create event : %s", __FUNCTION__, event->name);
+            PLUGIN_ERROR("not create event : %s", event->name);
             break;
         }
 
         snprintf(full_path, STR_LEN, "%s/%s", ctx->path, event->name);
-        flb_info("[in_coredump][%s] New file is created : (%s)", __FUNCTION__, full_path);
+        PLUGIN_INFO("New file is created : (%s)", full_path);
         strncpy(corefile, event->name, strlen(event->name));
 
         // Guarantee coredump file closing time
         sleep(1);
 
         if (verify_coredump_file(event->name) == -1) {
-            flb_error("[in_coredump][%s] Not coredump file", __FUNCTION__);
+            PLUGIN_ERROR("Not coredump file");
             break;
         }
 
         if (parse_coredump_comm(full_path, comm, pid, exe) == -1) {
-            flb_error("[in_coredump][%s] Fail to parse coredump file", __FUNCTION__);
+            PLUGIN_ERROR("Fail to parse coredump file");
             break;
         }
-        flb_info("[in_coredump][%s] comm : (%s), pid : (%s), exe (%s)", __FUNCTION__, comm, pid, exe);
+        PLUGIN_INFO("comm : (%s), pid : (%s), exe (%s)", comm, pid, exe);
 
         if (check_exe_time(exe) == -1) {
-            flb_error("[in_coredump][%s] Not official file", __FUNCTION__);
+            PLUGIN_ERROR("Not official file");
             break;
         }
 
-        sprintf(crashreport, "%s/%s-crashreport.txt", PATH_COREDUMP_DIRECTORY, event->name);
-        create_crashreport(ctx->crashreport_script, event->name, crashreport);
+        if ((access("/run/systemd/journal/socket", F_OK) == 0)) {
+            sprintf(crashreport, "%s/%s-crashreport.txt", PATH_COREDUMP_DIRECTORY, event->name);
+            create_crashreport(ctx->crashreport_script, event->name, crashreport);
+        } else {
+            strncpy(temp, event->name, strlen(event->name) - 3);
+            temp[strlen(temp)] = '\0';
+            sprintf(crashreport, "/tmp/%s-crashreport.txt", temp);
+        }
 
         if (access(crashreport, F_OK) != 0) {
-            flb_error("[in_coredump][%s] failed to create crashreport : %s", __FUNCTION__, crashreport);
+            PLUGIN_ERROR("failed to create crashreport : %s", crashreport);
             break;
         }
-        flb_info("[in_coredump][%s] crashreport file is created : %s)", __FUNCTION__, crashreport);
+        PLUGIN_INFO("crashreport file is created : %s)", crashreport);
 
         // Guarantee crashreport file closing time
         sleep(1);
+
+        if (!getCrashedFunction(crashreport, crashed_func)) {
+            PLUGIN_WARN("Fail to find crashed function");
+            crashed_func[0] = '\0';
+        }
 
         snprintf(upload_files, STR_LEN, "\'%s\' %s", full_path, crashreport);
 
@@ -375,16 +381,16 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         msgpack_pack_str_body(&mp_pck, KEY_UPLOAD_FILES, len);
         msgpack_pack_str(&mp_pck, len=strlen(upload_files));
         msgpack_pack_str_body(&mp_pck, upload_files, len);
-        flb_info("[in_coredump][%s] Add msgpack - key (%s) : val (%s)", __FUNCTION__, KEY_UPLOAD_FILES, upload_files);
+        PLUGIN_INFO("Add msgpack - key (%s) : val (%s)", KEY_UPLOAD_FILES, upload_files);
 
         // key : summary | value : [RDX_CRASH][distro] comm
         msgpack_pack_str(&mp_pck, len=strlen(KEY_SUMMARY));
         msgpack_pack_str_body(&mp_pck, KEY_SUMMARY, len);
 
-        snprintf(summary, STR_LEN, "[RDX_CRASH][%s] %s", distro_result, exe);
+        snprintf(summary, STR_LEN, "[RDX_CRASH][%s] %s %s", distro_result, exe, crashed_func);
         msgpack_pack_str(&mp_pck, len=strlen(summary));
         msgpack_pack_str_body(&mp_pck, summary, len);
-        flb_info("[in_coredump][%s] Add msgpack - key (%s) : val (%s)", __FUNCTION__, KEY_SUMMARY, summary);
+        PLUGIN_INFO("Add msgpack - key (%s) : val (%s)", KEY_SUMMARY, summary);
 
         // flush to fluentbit
         flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
@@ -409,6 +415,8 @@ static void in_coredump_config_destroy(struct flb_in_coredump_config *ctx)
 /* Initialize plugin */
 static int in_coredump_init(struct flb_input_instance *in, struct flb_config *config, void *data)
 {
+    setLogContext(in->log_level, in->p->name);
+
     int fd;
     int ret;
     struct flb_in_coredump_config *ctx;
@@ -426,7 +434,7 @@ static int in_coredump_init(struct flb_input_instance *in, struct flb_config *co
 
     fd = inotify_init();
     if (fd < 0) {
-        flb_error("[in_coredump][%s] Failed to init inotify_init", __FUNCTION__);
+        PLUGIN_ERROR("Failed to init inotify_init");
         goto init_error;
     }
 
@@ -439,7 +447,7 @@ static int in_coredump_init(struct flb_input_instance *in, struct flb_config *co
         ctx->path = (char *)pval;
     else
         ctx->path = PATH_COREDUMP_DIRECTORY;
-    flb_info("[in_coredump][%s] Monitoring coredump file path : %s", __FUNCTION__, ctx->path);
+    PLUGIN_INFO("Monitoring coredump file path : %s", ctx->path);
 
     // Set the crashreport script
     pval = flb_input_get_property("script", in);
@@ -447,7 +455,7 @@ static int in_coredump_init(struct flb_input_instance *in, struct flb_config *co
         ctx->crashreport_script = pval;
     else
         ctx->crashreport_script = DEFAULT_SCRIPT;
-    flb_info("[in_coredump][%s] Crashreport script : %s", __FUNCTION__, ctx->crashreport_script);
+    PLUGIN_INFO("Crashreport script : %s", ctx->crashreport_script);
 
     // Always initialize built-in JSON pack state
     flb_pack_state_init(&ctx->pack_state);
@@ -459,7 +467,7 @@ static int in_coredump_init(struct flb_input_instance *in, struct flb_config *co
     // Collect upon data available on the watch event
     ret = flb_input_set_collector_event(in, in_coredump_collect, ctx->fd, config);
     if (ret == -1) {
-        flb_error("[in_coredump][%s] Failed to set collector_event", __FUNCTION__);
+        PLUGIN_ERROR("Failed to set collector_event");
         goto init_error;
     }
 
@@ -468,7 +476,7 @@ static int in_coredump_init(struct flb_input_instance *in, struct flb_config *co
     // Set the context
     flb_input_set_context(in, ctx);
 
-    flb_info("[in_coredump][%s] initialize done", __FUNCTION__);
+    PLUGIN_INFO("initialize done");
 
     return 0;
 
