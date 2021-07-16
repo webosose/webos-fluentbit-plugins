@@ -1,6 +1,4 @@
-# @@@LICENSE
-#
-#      Copyright (c) 2021 LG Electronics, Inc.
+# Copyright (c) 2021 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,23 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# LICENSE@@@
-
-cmake_minimum_required(VERSION 2.8.7)
-project(webos-fluentbit-plugins)
-
-include(webOS/webOS)
-webos_modules_init(1 6 3)
-webos_component(1 0 0)
-
-add_subdirectory(python3-webos)
-webos_include_install_paths()
+# SPDX-License-Identifier: Apache-2.0
 
 include(FindPkgConfig)
-add_subdirectory(plugins)
-add_subdirectory(src/coredump_example)
 
-# install
-file(GLOB fluent-bit_conf files/conf/*.conf)
+webos_add_compiler_flags(ALL --std=c++11)
 
-install(FILES ${fluent-bit_conf} DESTINATION ${WEBOS_INSTALL_SYSCONFDIR}/fluent-bit)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+
+add_executable(coredump_example CoreExample.cpp)
+
+# Install
+install(TARGETS coredump_example RUNTIME DESTINATION ${WEBOS_INSTALL_BINDIR})
