@@ -27,6 +27,10 @@ int funcC()
     cout << "double delete\n";
     delete gp;
 
+    cout << "reference NULL\n";
+    gp = NULL;
+    *gp = 100;
+
     return 0;
 }
 
