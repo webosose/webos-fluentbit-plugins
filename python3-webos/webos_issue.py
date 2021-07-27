@@ -81,7 +81,7 @@ class WebOSIssue:
             issue = self.check_summary(summary)
             if issue is not None:
                 common.info("'{}' is already created - {}".format(summary, issue))
-                self._jira.update_issue_field(issue, fields)
+                self.update_issue(issue, summary, description)
                 return None
             issue = self.check_fixed_in(summary)
             if issue is not None:
