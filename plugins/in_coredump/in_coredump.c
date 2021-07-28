@@ -29,6 +29,7 @@
 #include "util/Logger.h"
 
 #define PATH_COREDUMP_DIRECTORY "/var/lib/systemd/coredump"
+#define PATH_OPKG_CEHCKSUM      "/var/luna/preferences/opkg_checksum"
 
 #define DEFAULT_SCRIPT          "webos_capture.py"
 #define DEFAULT_TIME_FILE       "/lib/systemd/systemd"
@@ -50,15 +51,14 @@ struct time_information
 };
 
 struct time_information default_time;
+char distro_result[STR_LEN];
+char official_checksum[STR_LEN];
 
 extern bool getCrashedFunction(const char* crashreport, char* crashed_func);
 
 static int init_default_time()
 {
-    PLUGIN_INFO("init default time information (%s) file", DEFAULT_TIME_FILE);
-
     struct stat def_stat;
-
     struct tm *def_tm_mtime;
     struct tm *def_tm_ctime;
 
@@ -66,6 +66,7 @@ static int init_default_time()
         PLUGIN_ERROR("Failed lstat (%s)", DEFAULT_TIME_FILE);
         return -1;
     }
+
     def_tm_mtime = localtime(&def_stat.st_mtime);
     def_tm_ctime = localtime(&def_stat.st_ctime);
 
@@ -76,10 +77,67 @@ static int init_default_time()
     default_time.change_mon = def_tm_ctime->tm_mon + 1;
     default_time.change_mday = def_tm_ctime->tm_mday;
 
-    PLUGIN_INFO("Default time information mtime (%d-%d-%d), ctime (%d-%d-%d)", \
-            default_time.modify_year, default_time.modify_mon, default_time.modify_mday, \
-            default_time.change_year, default_time.change_mon, default_time.change_mday);
+    return 0;
+}
 
+static void init_disto_info()
+{
+    int cnt = 0;
+
+    for (int i=0; i < strlen(WEBOS_TARGET_DISTRO); i++) {
+        if (*(WEBOS_TARGET_DISTRO+i) == '-')
+            continue;
+
+        distro_result[cnt++] = *(WEBOS_TARGET_DISTRO+i);
+    }
+    distro_result[cnt] = '\0';
+}
+
+static int init_opkg_checksum()
+{
+    FILE *fp;
+    int ret;
+    char checksum_result[STR_LEN];
+
+    if (access(PATH_OPKG_CEHCKSUM, F_OK) == 0) {
+        PLUGIN_INFO("Already opkg checksum file is created (%s)", PATH_OPKG_CEHCKSUM);
+        fp = fopen(PATH_OPKG_CEHCKSUM, "r");
+        if (fp == NULL) {
+            PLUGIN_ERROR("Failed fopen");
+            return -1;
+        }
+        fgets(checksum_result, STR_LEN, fp);
+        strncpy(official_checksum, checksum_result, strlen(checksum_result));
+        fclose(fp);
+        return 0;
+    }
+
+    fp = popen("opkg info | md5sum | awk \'{print $1}\'", "r");
+    if (fp == NULL) {
+        PLUGIN_ERROR("Failed popen");
+        return -1;
+    }
+
+    if (fgets(checksum_result, STR_LEN, fp) == NULL) {
+        PLUGIN_ERROR("Failed fgets");
+        return -1;
+    }
+    pclose(fp);
+
+    checksum_result[strlen(checksum_result)-1] = '\0';
+    strncpy(official_checksum, checksum_result, strlen(checksum_result));
+
+    fp = fopen(PATH_OPKG_CEHCKSUM, "w");
+    if (fp == NULL) {
+        PLUGIN_ERROR("Failed fopen");
+        return -1;
+    }
+
+    fputs(checksum_result, fp);
+
+    fclose(fp);
+
+    PLUGIN_INFO("Create opkg checksum file : (%s)", PATH_OPKG_CEHCKSUM);
     return 0;
 }
 
@@ -105,23 +163,23 @@ static int parse_coredump_comm(const char *full, char *comm, char *pid, char *ex
     char exe_str[STR_LEN];
     char *buf, *key, *val;
 
-    PLUGIN_INFO("full param : (%s)", full);
+    PLUGIN_INFO("Full param : (%s)", full);
 
     // Determine the length of the buffer needed.
     buflen = listxattr(full, NULL, 0);
     if (buflen == -1) {
-        PLUGIN_ERROR("failed listxattr");
+        PLUGIN_ERROR("Failed listxattr");
         return -1;
     }
     if (buflen == 0) {
-        PLUGIN_ERROR("no attributes");
+        PLUGIN_ERROR("No attributes");
         return -1;
     }
 
     // Allocate the buffer.
     buf = malloc(buflen);
     if (buf == NULL) {
-        PLUGIN_ERROR("failed malloc");
+        PLUGIN_ERROR("Failed malloc");
         return -1;
     }
 
@@ -132,7 +190,7 @@ static int parse_coredump_comm(const char *full, char *comm, char *pid, char *ex
     if (buflen == -1) {
         return -1;
     } else if (buflen == 0) {
-        PLUGIN_ERROR("no attributes full : (%s)", full);
+        PLUGIN_ERROR("No attributes full : (%s)", full);
         return -1;
     }
 
@@ -146,20 +204,20 @@ static int parse_coredump_comm(const char *full, char *comm, char *pid, char *ex
         vallen = getxattr(full, key, NULL, 0);
 
         if (vallen == -1) {
-            PLUGIN_ERROR("failed getxattr");
+            PLUGIN_ERROR("Failed getxattr");
         } else if (vallen == 0) {
-            PLUGIN_ERROR("no value");
+            PLUGIN_ERROR("No value");
         } else {
             val = malloc(vallen + 1);
             if (val == NULL) {
-                PLUGIN_ERROR("failed malloc");
+                PLUGIN_ERROR("Failed malloc");
                 return -1;
             }
 
             // Copy value to buffer
             vallen = getxattr(full, key, val, vallen);
             if (vallen == -1) {
-                PLUGIN_ERROR("failed getxattr");
+                PLUGIN_ERROR("Failed getxattr");
             } else {
                 // Check attribute value (exe, pid)
                 val[vallen] = 0;
@@ -196,9 +254,37 @@ static int parse_coredump_comm(const char *full, char *comm, char *pid, char *ex
     return 0;
 }
 
+static int check_opkg_checksum()
+{
+    FILE *fp;
+    int ret;
+    char checksum_result[STR_LEN];
+
+    fp = popen("opkg info | md5sum | awk \'{print $1}\'", "r");
+    if (fp == NULL) {
+        PLUGIN_ERROR("Failed popen");
+        return -1;
+    }
+
+    if (fgets(checksum_result, STR_LEN, fp) == NULL) {
+        PLUGIN_ERROR("Failed fgets");
+        return -1;
+    }
+    pclose(fp);
+
+    checksum_result[strlen(checksum_result)-1] = '\0';
+
+    PLUGIN_INFO("Default checksum (%s), now (%s)", official_checksum, checksum_result);
+
+    if (strcmp(official_checksum, checksum_result) == 0)
+        return 0;
+    else
+        return -1;
+}
+
 static int check_exe_time(const char *exe)
 {
-    PLUGIN_INFO("check exe (%s) file", exe);
+    PLUGIN_INFO("Check time of (%s) file", exe);
 
     struct stat exe_stat;
 
@@ -214,8 +300,6 @@ static int check_exe_time(const char *exe)
 
     exe_tm_mtime = localtime(&exe_stat.st_mtime);
     exe_tm_ctime = localtime(&exe_stat.st_ctime);
-    PLUGIN_DEBUG("Exe Modify time (%s), Change time (%s)", ctime(&exe_stat.st_mtime), ctime(&exe_stat.st_ctime));
-    PLUGIN_DEBUG("Exe Modify time (%d %d %d), Change time (%d %d %d)", exe_tm_mtime->tm_year + 1900, exe_tm_mtime->tm_mon + 1, exe_tm_mtime->tm_mday, exe_tm_ctime->tm_year + 1900, exe_tm_ctime->tm_mon + 1, exe_tm_ctime->tm_mday);
 
     exe_time.modify_year = exe_tm_mtime->tm_year + 1900;
     exe_time.modify_mon = exe_tm_mtime->tm_mon + 1;
@@ -224,8 +308,11 @@ static int check_exe_time(const char *exe)
     exe_time.change_mon = exe_tm_ctime->tm_mon + 1;
     exe_time.change_mday = exe_tm_ctime->tm_mday;
 
-    PLUGIN_INFO("Exe time information mtime (%d-%d-%d), ctime (%d-%d-%d)", \
-            exe_time.modify_year, exe_time.modify_mon, exe_time.modify_mday, \
+    PLUGIN_INFO("Modified time information default mtime (%d-%d-%d), exe mtime (%d-%d-%d)", \
+            default_time.modify_year, default_time.modify_mon, default_time.modify_mday, \
+            exe_time.modify_year, exe_time.modify_mon, exe_time.modify_mday);
+    PLUGIN_INFO("Changed time information default ctime (%d-%d-%d), exe ctime (%d-%d-%d)", \
+            default_time.change_year, default_time.change_mon, default_time.change_mday, \
             exe_time.change_year, exe_time.change_mon, exe_time.change_mday);
 
     if (default_time.modify_year != exe_time.modify_year || default_time.modify_mon != exe_time.modify_mon || default_time.modify_mday != exe_time.modify_mday || \
@@ -252,13 +339,11 @@ static int create_crashreport(const char *script, const char *corefile, const ch
 
 static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
-    int bytes = 0;
-    int ret;
     struct flb_in_coredump_config *ctx = in_context;
+    struct inotify_event *event;
+
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
-
-    struct inotify_event *event;
 
     char full_path[STR_LEN];
     char comm[STR_LEN];
@@ -269,16 +354,12 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
     char crashed_func[STR_LEN];
     char upload_files[STR_LEN];
     char summary[STR_LEN];
-    int len;
-    char distro_result[STR_LEN];
     char temp[STR_LEN];
 
-    int cnt = 0;
+    int bytes = 0;
+    int ret;
+    int len;
     int i;
-
-    if (init_default_time() == -1) {
-        PLUGIN_ERROR("Failed to initialize default time information");
-    }
 
     bytes = read(ctx->fd, ctx->buf + ctx->buf_len, sizeof(ctx->buf) - ctx->buf_len - 1);
 
@@ -288,16 +369,6 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         flb_engine_exit(config);
         return -1;
     }
-
-    for (i=0; i < strlen(WEBOS_TARGET_DISTRO); i++) {
-        if (*(WEBOS_TARGET_DISTRO+i) == '-')
-            continue;
-
-        distro_result[cnt++] = *(WEBOS_TARGET_DISTRO+i);
-    }
-    distro_result[cnt] = '\0';
-
-    PLUGIN_INFO("modified distro from (%s) to (%s)", WEBOS_TARGET_DISTRO, distro_result);
 
     ctx->buf_start = ctx->buf_len;
     ctx->buf_len += bytes;
@@ -313,12 +384,12 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         event=(struct inotify_event*) &ctx->buf[ctx->buf_start];
 
         if (event->len == 0) {
-            PLUGIN_ERROR("event length is 0");
+            PLUGIN_ERROR("Event length is 0");
             break;
         }
 
         if (!(event->mask & IN_CREATE)) {
-            PLUGIN_ERROR("not create event : %s", event->name);
+            PLUGIN_ERROR("Not create event : %s", event->name);
             break;
         }
 
@@ -340,8 +411,13 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         }
         PLUGIN_INFO("comm : (%s), pid : (%s), exe (%s)", comm, pid, exe);
 
+        if (check_opkg_checksum() == -1) {
+            PLUGIN_ERROR("Not official opkg");
+            break;
+        }
+
         if (check_exe_time(exe) == -1) {
-            PLUGIN_ERROR("Not official file");
+            PLUGIN_ERROR("Not official exe file");
             break;
         }
 
@@ -355,16 +431,16 @@ static int in_coredump_collect(struct flb_input_instance *ins, struct flb_config
         }
 
         if (access(crashreport, F_OK) != 0) {
-            PLUGIN_ERROR("failed to create crashreport : %s", crashreport);
+            PLUGIN_ERROR("Failed to create crashreport : %s", crashreport);
             break;
         }
-        PLUGIN_INFO("crashreport file is created : %s)", crashreport);
+        PLUGIN_INFO("The crashreport file is created : %s)", crashreport);
 
         // Guarantee crashreport file closing time
         sleep(1);
 
         if (!getCrashedFunction(crashreport, crashed_func)) {
-            PLUGIN_WARN("Fail to find crashed function");
+            PLUGIN_WARN("Failed to find crashed function");
             crashed_func[0] = '\0';
         }
 
@@ -424,6 +500,20 @@ static int in_coredump_init(struct flb_input_instance *in, struct flb_config *co
 
     const char *pval = NULL;
 
+    if (init_default_time() == -1) {
+        PLUGIN_ERROR("Failed to initialize default time information");
+    }
+    PLUGIN_INFO("Default (%s) file time information :  mtime (%d-%d-%d), ctime (%d-%d-%d) ", \
+            DEFAULT_TIME_FILE, \
+            default_time.modify_year, default_time.modify_mon, default_time.modify_mday, \
+            default_time.change_year, default_time.change_mon, default_time.change_mday);
+
+    init_disto_info();
+    PLUGIN_INFO("Distro : (%s)", distro_result);
+
+    init_opkg_checksum();
+    PLUGIN_INFO("Official checksum : (%s)", official_checksum);
+
     /* Allocate space for the configuration */
     ctx = flb_malloc(sizeof(struct flb_in_coredump_config));
     if (!ctx)
@@ -476,7 +566,7 @@ static int in_coredump_init(struct flb_input_instance *in, struct flb_config *co
     // Set the context
     flb_input_set_context(in, ctx);
 
-    PLUGIN_INFO("initialize done");
+    PLUGIN_INFO("Initialize done");
 
     return 0;
 
