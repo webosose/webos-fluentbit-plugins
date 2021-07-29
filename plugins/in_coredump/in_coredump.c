@@ -120,6 +120,7 @@ static int init_opkg_checksum()
 
     if (fgets(checksum_result, STR_LEN, fp) == NULL) {
         PLUGIN_ERROR("Failed fgets");
+        pclose(fp);
         return -1;
     }
     pclose(fp);
@@ -268,6 +269,7 @@ static int check_opkg_checksum()
 
     if (fgets(checksum_result, STR_LEN, fp) == NULL) {
         PLUGIN_ERROR("Failed fgets");
+        pclose(fp);
         return -1;
     }
     pclose(fp);
