@@ -149,7 +149,7 @@ static int verify_coredump_file(const char *corefile)
     if (strncmp(corefile, "core", 4) != 0)
         return -1;
 
-    if (corefile[len-3] != '.' && corefile[len-2] && 'x' && corefile[len-1] && 'z')
+    if (corefile[len-3] != '.' && corefile[len-2] != 'x' && corefile[len-1] != 'z')
         return -1;
 
     return 0;
@@ -239,7 +239,8 @@ static int parse_coredump_comm(const char *full, char *comm, char *pid, char *ex
     }
     free(buf);
 
-    strcpy(exe_str, exe);
+    strncpy(exe_str, exe, STR_LEN);
+    exe_str[STR_LEN-1] = '\0';
 
     char *ptr = strtok(exe_str, "/");
     while (ptr != NULL)

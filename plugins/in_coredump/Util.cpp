@@ -41,7 +41,7 @@ extern "C" bool getCrashedFunction(const char* crashreport, char* func)
         // #0  0x0000000000487ba4 _Z5funcCv (coredump_example + 0xba4)
         // #0  0x00000000b6cb3c26 n/a (libc.so.6 + 0x1ac26)
         if (!regex_match(line, match, regex("\\s*#0\\s+0x([0-9a-zA-Z]+)\\s+([[:print:]]+)"))) {
-            break;
+            PLUGIN_DEBUG("Not matched");
         }
         break;
     }

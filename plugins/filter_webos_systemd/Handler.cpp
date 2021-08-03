@@ -58,6 +58,7 @@ Handler::Handler()
       m_isBootTimePerfDone(false)
 {
     setClassName("Handler");
+    m_respawnedTime = { 0, 0 };
     m_deviceInfo = pbnjson::Object();
 }
 
