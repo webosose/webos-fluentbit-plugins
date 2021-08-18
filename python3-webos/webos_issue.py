@@ -51,7 +51,7 @@ class WebOSIssue:
             "customfield_18405": NYX.instance().get_info()['webos_build_id'],
             "customfield_18122": [
                 {
-                    "value": NYX.instance().get_device_name(),
+                    "value": NYX.instance().get_found_on(),
                 }
             ],
             "labels": [

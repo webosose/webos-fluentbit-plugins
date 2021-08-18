@@ -122,6 +122,7 @@ class NYX:
         self.info['device_name']       = self.query('DeviceInfo', 'device_name')
         self.info['webos_build_id']    = self.query('OSInfo', 'webos_build_id')
         self.info['webos_imagename']   = self.query('OSInfo', 'webos_imagename')
+        self.info['webos_name']        = self.query('OSInfo', 'webos_name')
         self.info['webos_release']     = self.query('OSInfo', 'webos_release')
 
     def query(self, category, name):
@@ -135,14 +136,20 @@ class NYX:
     def get_info(self):
         return self.info
 
-    def get_device_name(self):
+    def get_found_on(self):
         device_names = get_value('deviceName')
         name = self.info['device_name']
 
         if name in device_names:
             return device_names[name]
-        else:
+        # The device_name can be the same in the upper layer of webos,
+        # So distinguish by adding the webos_name; 'webOS XX Reference'
+        webos_name = self.info['webos_name']
+        try:
+            return webos_name.split(' ')[1] + '-' + name.upper()
+        except:
             return None
+
 
     def print(self):
         print('serial_number: {}'.format(self.info['serial_number']))
@@ -152,6 +159,7 @@ class NYX:
         print('device_name: {}'.format(self.info['device_name']))
         print('webos_build_id: {}'.format(self.info['webos_build_id']))
         print('webos_imagename: {}'.format(self.info['webos_imagename']))
+        print('webos_name: {}'.format(self.info['webos_name']))
         print('webos_release: {}'.format(self.info['webos_release']))
 
 
