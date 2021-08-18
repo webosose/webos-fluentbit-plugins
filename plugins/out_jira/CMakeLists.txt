@@ -18,9 +18,6 @@
 
 include(FindPkgConfig)
 
-pkg_check_modules(JSONC REQUIRED json-c)
-include_directories(${JSONC_INCLUDE_DIRS})
-
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 file(GLOB_RECURSE SRC_C ${CMAKE_CURRENT_SOURCE_DIR}/*.c)
@@ -31,8 +28,4 @@ set(SRC
     ${SRC_CPP}
 )
 
-set(LIB
-    ${JSONC_LDFLAGS}
-)
-
-FLB_PLUGIN(out_jira "${SRC}" "${LIB}")
+FLB_PLUGIN(out_jira "${SRC}" "")

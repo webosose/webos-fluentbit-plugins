@@ -17,15 +17,6 @@
 #ifndef FLB_OUT_JIRA_H
 #define FLB_OUT_JIRA_H
 
-#include <json.h>
-
 #include "FluentBit.h"
-
-struct flb_jira_config {
-    int out_format;
-    int json_date_format;
-    flb_sds_t json_date_key;
-    const char *jira_script;
-};
 
 #endif
