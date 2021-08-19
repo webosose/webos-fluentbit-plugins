@@ -77,15 +77,13 @@ class WebOSIssue:
         if unique_summary:
             if summary is None:
                 common.error("'summary' is required")
-                return
-            issue = self.check_summary(summary)
-            if issue is not None:
-                common.info("'{}' is already created - {}".format(summary, issue))
+                return None
+            if self.check_summary(summary) is True:
+                common.info("'{}' is already created".format(summary))
                 self.update_issue(issue, summary, description)
                 return None
-            issue = self.check_fixed_in(summary)
-            if issue is not None:
-                common.info("'{}' is already fixed - {}".format(summary, issue))
+            if self.check_fixed_in(summary) is True:
+                common.info("'{}' is already fixed".format(summary))
                 return None
         return self._jira.issue_create(fields)
 
@@ -125,29 +123,39 @@ class WebOSIssue:
         summary = summary.replace("]","\\\\]")
         JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug AND status not in (Closed, Verify)'.format(PROJECT_KEY, summary)
         common.debug(JQL)
-        response = self._jira.jql(JQL)
+        response = self._jira.jql(JQL, limit=1)
         if len(response['issues']) > 0:
-            return response['issues'][0]['key']
-        return None
+            return True
+        return False
 
     def check_fixed_in(self, summary):
         summary = summary.replace("[","\\\\[")
         summary = summary.replace("]","\\\\]")
-        JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug AND "Fixed In" is not Empty ORDER BY "Fixed In" DESC'.format(PROJECT_KEY, summary)
+        JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug AND "Fixed In" is not Empty ORDER BY resolutiondate DESC'.format(PROJECT_KEY, summary)
         common.debug(JQL)
-        response = self._jira.jql(JQL)
+        response = self._jira.jql(JQL, limit=1)
         if len(response['issues']) == 0:
-            return None
+            return False
         try:
-            fixed_in = int(response['issues'][0]['fields']['customfield_12415'])
+            fixed_in = response['issues'][0]['fields']['customfield_12415']
             common.info('Fixed In : {}'.format(fixed_in))
-            build_id = int(NYX.instance().get_info()['webos_build_id'])
-            common.info('Build Id : {}'.format(build_id))
-            if (fixed_in > build_id):
-                return response['issues'][0]['key']
+            # '2108' or '2108, OSE 373' or 'OSE 374, 2109' or 'thud 108'
+            fixed_in_list = [x.strip() for x in fixed_in.split(',')]
+            for x in fixed_in_list:
+                if len(x.split(' ')) == 1:
+                    # master build_id
+                    fixed_build_id = int(x)
+                    break
+                elif x.startswith('thud'):
+                    fixed_build_id = int(x[4:])
+                    break
+            device_build_id = int(NYX.instance().get_info()['webos_build_id'])
+            common.info('Build Id : {}'.format(device_build_id))
+            if int(fixed_build_id) > int(device_build_id):
+                return True
         except Exception as ex:
             print(ex)
-        return None
+        return False
 
     def attach_files(self, key, files):
         if files is None:

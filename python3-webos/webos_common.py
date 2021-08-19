@@ -100,6 +100,11 @@ def error(message):
 ####### NYX #######
 
 
+# if build_id is larger than threshold, consider as master build_id.
+OSE_BUILD_ID_THRESHOLD = 2000
+# The difference between master build_id and ose build_id is 1735.
+OSE_BUILD_ID_DIFF = 1735
+
 class NYX:
     _instance = None
 
@@ -125,6 +130,15 @@ class NYX:
         self.info['webos_name']        = self.query('OSInfo', 'webos_name')
         self.info['webos_release']     = self.query('OSInfo', 'webos_release')
 
+        # convert OSE build_id to master build_id
+        webos_build_id = self.info['webos_build_id']
+        webos_name = self.info['webos_name']
+        try:
+            if 'OSE' == webos_name.split(' ')[1] and int(webos_build_id) < OSE_BUILD_ID_THRESHOLD:
+                webos_build_id = str(int(webos_build_id) + OSE_BUILD_ID_DIFF)
+        except:
+            pass
+
     def query(self, category, name):
         try:
             result = subprocess.check_output(['nyx-cmd', category, 'query', name], stderr=subprocess.DEVNULL)
@@ -149,7 +163,6 @@ class NYX:
             return webos_name.split(' ')[1] + '-' + name.upper()
         except:
             return None
-
 
     def print(self):
         print('serial_number: {}'.format(self.info['serial_number']))
