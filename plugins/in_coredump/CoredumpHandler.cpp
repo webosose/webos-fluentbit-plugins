@@ -29,6 +29,7 @@
 
 #include "Environment.h"
 #include "util/Logger.h"
+#include "util/PluginConf.h"
 
 #define PATH_COREDUMP_DIRECTORY "/var/lib/systemd/coredump"
 #define PATH_OPKG_CEHCKSUM      "/var/luna/preferences/opkg_checksum"
@@ -40,6 +41,10 @@
 #define KEY_UPLOAD_FILES        "upload-files"
 
 #define STR_LEN                 1024
+
+#define CONF_FILE               "conf_file"
+#define COREDUMP_WEBOS_CONF     "coredump_webos.conf"
+#define EXCEPTIONS              "EXCEPTIONS"
 
 extern "C" int initCoredumpHandler(struct flb_input_instance *ins, struct flb_config *config, void *data)
 {
@@ -78,6 +83,9 @@ int CoredumpHandler::onInit(struct flb_input_instance *ins, struct flb_config *c
     (void) data;
 
     const char *pval = NULL;
+
+    string exceptionsFilePath;
+    PluginConf pluginConf;
 
     if (initDefaultTime() == -1) {
         PLUGIN_ERROR("Failed to initialize default time information");
@@ -125,6 +133,23 @@ int CoredumpHandler::onInit(struct flb_input_instance *ins, struct flb_config *c
     else
         ctx->crashreport_script = DEFAULT_SCRIPT;
     PLUGIN_INFO("Crashreport script : %s", ctx->crashreport_script);
+
+    pval = flb_input_get_property(CONF_FILE, ins);
+    if (pval) {
+        if (pval[0] == '/')
+            exceptionsFilePath = pval;
+        else
+            exceptionsFilePath = string(config->conf_path) + pval;
+    } else {
+        exceptionsFilePath = string(config->conf_path) + COREDUMP_WEBOS_CONF;
+    }
+    PLUGIN_INFO("Exceptions_File : %s", exceptionsFilePath.c_str());
+    pluginConf.readConfFile(exceptionsFilePath.c_str());
+    for (const pair<string, string>& kv : pluginConf.getSection(EXCEPTIONS)) {
+        if (strcasecmp(kv.first.c_str(), "path") == 0) {
+            m_exceptions.push_back(kv.second);
+        }
+    }
 
     // Always initialize built-in JSON pack state
     flb_pack_state_init(&ctx->pack_state);
@@ -253,6 +278,11 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
 
         if (checkExeTime(exe) == -1) {
             PLUGIN_WARN("Not official exe file");
+            break;
+        }
+
+        if (isExceptedExe(exe)) {
+            PLUGIN_WARN("The exe file exists in exception list.");
             break;
         }
 
@@ -582,6 +612,16 @@ int CoredumpHandler::checkExeTime(const char *exe)
         return -1;
 
     return 0;
+}
+
+bool CoredumpHandler::isExceptedExe(const char *exe)
+{
+    for (string& exception : m_exceptions) {
+        if (strstr(exe, exception.c_str()) != NULL) {
+            return true;
+        }
+    }
+    return false;
 }
 
 int CoredumpHandler::createCrashreport(const char *script, const char *corefile, const char *crashreport)

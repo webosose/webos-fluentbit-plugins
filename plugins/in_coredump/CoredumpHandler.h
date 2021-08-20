@@ -81,6 +81,7 @@ private:
     int parseCoredumpComm(const char *full, char *comm, char *pid, char *exe);
     int checkOpkgChecksum();
     int checkExeTime(const char *exe);
+    bool isExceptedExe(const char *exe);
     int createCrashreport(const char *script, const char *corefile, const char *crashreport);
     bool getCrashedFunction(const char* crashreport, char* func);
     void destroyCoredumpConfig(struct flb_in_coredump_config *ctx);
@@ -88,6 +89,7 @@ private:
     struct time_information m_defaultTime;
     string m_distroResult;
     string m_officialChecksum;
+    list<string> m_exceptions;
 };
 
 #endif
