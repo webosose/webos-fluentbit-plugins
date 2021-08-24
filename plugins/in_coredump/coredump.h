@@ -14,8 +14,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef FLB_OUT_JIRA_H
-#define FLB_OUT_JIRA_H
+#ifndef FLB_IN_COREDUMP_H
+#define FLB_IN_COREDUMP_H
 
 #include "FluentBit.h"
 
