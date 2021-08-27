@@ -78,8 +78,9 @@ class WebOSIssue:
             if summary is None:
                 common.error("'summary' is required")
                 return None
-            if self.check_summary(summary) is True:
-                common.info("'{}' is already created".format(summary))
+            issue = self.find_open_issue(summary)
+            if issue is not None:
+                common.info("'{}' is already created - {}".format(summary, issue))
                 self.update_issue(issue, summary, description)
                 return None
             if self.check_fixed_in(summary) is True:
@@ -118,15 +119,15 @@ class WebOSIssue:
         except:
             return False
 
-    def check_summary(self, summary):
+    def find_open_issue(self, summary):
         summary = summary.replace("[","\\\\[")
         summary = summary.replace("]","\\\\]")
         JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug AND status not in (Closed, Verify)'.format(PROJECT_KEY, summary)
         common.debug(JQL)
         response = self._jira.jql(JQL, limit=1)
         if len(response['issues']) > 0:
-            return True
-        return False
+            return response['issues'][0]['key']
+        return None
 
     def check_fixed_in(self, summary):
         summary = summary.replace("[","\\\\[")

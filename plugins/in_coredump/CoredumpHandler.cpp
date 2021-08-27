@@ -28,6 +28,7 @@
 #include <sys/xattr.h>
 
 #include "Environment.h"
+#include "util/File.h"
 #include "util/Logger.h"
 #include "util/PluginConf.h"
 
@@ -62,6 +63,7 @@ extern "C" int collectCoredump(struct flb_input_instance *ins, struct flb_config
 }
 
 CoredumpHandler::CoredumpHandler()
+    : m_isNFSMode(false)
 {
     PLUGIN_INFO();
     setClassName("CoredumpHandler");
@@ -100,6 +102,11 @@ int CoredumpHandler::onInit(struct flb_input_instance *ins, struct flb_config *c
 
     initOpkgChecksum();
     PLUGIN_INFO("Official checksum : (%s)", m_officialChecksum.c_str());
+
+    string cmdline = File::readFile("/proc/cmdline");
+    if (cmdline.find("nfsroot=") != string::npos)
+        m_isNFSMode = true;
+    PLUGIN_INFO("NFS : (%s)", m_isNFSMode ? "Yes" : "No");
 
     /* Allocate space for the configuration */
     ctx = (struct flb_in_coredump_config*)flb_malloc(sizeof(struct flb_in_coredump_config));
@@ -270,6 +277,11 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
             break;
         }
         PLUGIN_INFO("comm : (%s), pid : (%s), exe (%s)", comm, pid, exe);
+
+        if (m_isNFSMode) {
+            PLUGIN_WARN("NFS mode");
+            break;
+        }
 
         if (checkOpkgChecksum() == -1) {
             PLUGIN_WARN("Not official opkg");
