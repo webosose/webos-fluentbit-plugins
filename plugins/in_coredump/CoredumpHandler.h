@@ -90,6 +90,7 @@ private:
     string m_distroResult;
     string m_officialChecksum;
     list<string> m_exceptions;
+    bool m_isNFSMode;
 };
 
 #endif
