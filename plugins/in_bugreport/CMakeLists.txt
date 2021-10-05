@@ -16,23 +16,14 @@
 #
 # LICENSE@@@
 
-cmake_minimum_required(VERSION 2.8.7)
-project(webos-fluentbit-plugins)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-include(webOS/webOS)
-webos_modules_init(1 6 3)
-webos_component(1 0 0)
+file(GLOB_RECURSE SRC_C ${CMAKE_CURRENT_SOURCE_DIR}/*.c)
+file(GLOB_RECURSE SRC_CPP ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 
-add_subdirectory(python3-webos)
-webos_include_install_paths()
+set(SRC
+    ${SRC_C}
+    ${SRC_CPP}
+)
 
-include(FindPkgConfig)
-add_subdirectory(plugins)
-add_subdirectory(src/coredump_example)
-
-# install
-file(GLOB fluent-bit_conf files/conf/*.conf)
-
-install(FILES ${fluent-bit_conf} DESTINATION ${WEBOS_INSTALL_SYSCONFDIR}/fluent-bit)
-
-webos_build_system_bus_files()
+FLB_PLUGIN(in_bugreport "${SRC}" "")

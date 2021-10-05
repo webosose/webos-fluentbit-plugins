@@ -18,6 +18,9 @@
 
 include(FindPkgConfig)
 
+pkg_check_modules(LS2 REQUIRED luna-service2)
+include_directories(${LS2_INCLUDE_DIRS})
+
 pkg_check_modules(GLIB2 REQUIRED glib-2.0)
 include_directories(${GLIB2_INCLUDE_DIRS})
 
@@ -48,7 +51,7 @@ macro(FLB_PLUGIN name src deps)
     set_target_properties(flb-${name} PROPERTIES PREFIX "")
     set_target_properties(flb-${name} PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-    target_link_libraries(flb-${name} ${deps} ${GLIB2_LDFLAGS} ${PBNJSON_CPP_LDFLAGS})
+    target_link_libraries(flb-${name} ${deps} ${LS2_LDFLAGS} ${GLIB2_LDFLAGS} ${PBNJSON_CPP_LDFLAGS})
 
     install(TARGETS flb-${name}
         LIBRARY DESTINATION /etc/fluent-bit)
@@ -59,6 +62,7 @@ set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 # Build plugin
 FLB_OPTION(FLB_JEMALLOC OFF)
 
+add_subdirectory(in_bugreport)
 add_subdirectory(in_coredump)
 add_subdirectory(out_jira)
 add_subdirectory(filter_webos_systemd)

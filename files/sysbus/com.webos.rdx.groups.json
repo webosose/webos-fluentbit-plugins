@@ -1,0 +1,6 @@
+{
+    "allowedNames" : [
+        "com.webos.rdx.*"
+    ],
+    "diagnostics.telemetry": ["oem"]
+}

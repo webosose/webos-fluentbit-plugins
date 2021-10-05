@@ -1,0 +1,7 @@
+{
+    "com.webos.rdx.bugreport": [
+        "physicaldevice.query",
+        "surfacemanager.devutility",
+        "diagnostics.telemetry"
+    ]
+}
