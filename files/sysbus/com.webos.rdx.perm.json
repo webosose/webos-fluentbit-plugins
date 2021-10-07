@@ -1,7 +1,8 @@
 {
-    "com.webos.rdx.bugreport": [
-        "physicaldevice.query",
+    "com.webos.service.bugreport": [
+        "application.launcher",
+        "notification.operation",
         "surfacemanager.devutility",
-        "diagnostics.telemetry"
+	    "physicaldevice.query"
     ]
 }

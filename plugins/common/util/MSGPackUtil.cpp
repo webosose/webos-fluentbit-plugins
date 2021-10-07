@@ -55,8 +55,9 @@ void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, const JVal
     if (!value.isObject()) {
         return;
     }
-
-    packStr(packer, key);
+    if (!key.empty()) {
+        packStr(packer, key);
+    }
     msgpack_pack_map(packer, (size_t)value.objectSize());
 
     string numberStr;

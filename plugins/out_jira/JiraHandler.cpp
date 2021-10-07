@@ -22,10 +22,12 @@
 
 #define KEY_SUMMARY             "summary"
 #define KEY_UPLOAD_FILES        "upload-files"
+#define KEY_USERNAME            "username"
+#define KEY_PASSWORD            "password"
+#define KEY_PRIORITY            "priority"
+#define KEY_REPRODUCIBILITY     "reproducibility"
 
 #define DEFAULT_SCRIPT          "webos_issue.py"
-
-#define STR_LEN                 1024
 
 extern "C" int initJiraHandler(struct flb_output_instance *ins, struct flb_config *config, void *data)
 {
@@ -124,7 +126,12 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
     JValue object;
     string summary;
     string upload_files;
-    char command[STR_LEN];
+    string username;
+    string password;
+    string priority;
+    string reproducibility;
+    string command;
+    bool isCrashReport = (string::npos != string(tag, tag_len).find("coredump"));
 
     json = flb_pack_msgpack_to_json_format((const char*)data, bytes, m_outFormat, m_jsonDateFormat, m_jsonDateKey);
     PLUGIN_DEBUG("%s", json);
@@ -146,13 +153,32 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
     }
     PLUGIN_INFO("upload-files : %s", upload_files.c_str());
 
+    if (JValueUtil::getValue(object, KEY_USERNAME, username)) {
+        PLUGIN_INFO("username : %s", username.c_str());
+    }
+    if (JValueUtil::getValue(object, KEY_PASSWORD, password)) {
+        PLUGIN_INFO("password : %s", password.c_str());
+    }
+    if (JValueUtil::getValue(object, KEY_PRIORITY, priority)) {
+        PLUGIN_INFO("priority : %s", priority.c_str());
+    }
+    if (JValueUtil::getValue(object, KEY_REPRODUCIBILITY, reproducibility)) {
+        PLUGIN_INFO("reproducibility : %s", reproducibility.c_str());
+    }
+
     // template : command --summary XXX --unique-summary --upload-files YYY
     // example  : webos_issue.py --summary "[CRASH][OSE] bootd" --unique-summary --upload-files core.bootd.0.....xz
 
-    sprintf(command, "%s --summary \'%s\' --unique-summary --attach-crashcounter --upload-files %s", m_jiraScript.c_str(), summary.c_str(), upload_files.c_str());
-    PLUGIN_INFO("command : %s", command);
+    command = "webos_issue.py --summary \'" + summary + "\' "
+            + (username.empty() ? "" : "--id " + username + " ")
+            + (password.empty() ? "" : "--pw " + password + " ")
+            + (priority.empty() ? "" : "--priority " + priority + " ")
+            + (reproducibility.empty() ? "" : "--reproducibility \'" + reproducibility + "\' ")
+            + (isCrashReport ? "--unique-summary --attach-crashcounter " : "")
+            + "--upload-files " + upload_files;
+    PLUGIN_INFO("command : %s", command.c_str());
 
-    int ret = system(command);
+    int ret = system(command.c_str());
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }

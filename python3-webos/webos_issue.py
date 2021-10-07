@@ -40,7 +40,7 @@ class WebOSIssue:
             password=common.get_value('account', 'pw'))
         return
 
-    def create_issue(self, summary=None, description=None, unique_summary=False, component=COMPONENT_TEMP):
+    def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, unique_summary=False, component=COMPONENT_TEMP):
         if summary is None and description is None:
             return None
 
@@ -65,13 +65,17 @@ class WebOSIssue:
             fields['summary'] = summary
         if description is not None:
             fields['description'] = description
+        if priority is not None:
+            fields['priority'] = {'name': priority}
+        if reproducibility is not None:
+            fields['customfield_11202'] = {'value': reproducibility}
         common.debug('component {}'.format(component))
         if component != COMPONENT_TEMP:
             components = common.get_value('customfield', 'components')
             if component not in components:
                 component = COMPONENT_TEMP
         fields['components'] = [
-            { "name": component }
+            { 'name': component }
         ]
 
         if unique_summary:
@@ -223,6 +227,8 @@ if __name__ == "__main__":
     parser.add_argument('--description',      type=str, help='jira description')
     parser.add_argument('--component',        type=str, help='jira component')
     parser.add_argument('--comment',          type=str, help='jira comment')
+    parser.add_argument('--priority',         type=str, help='jira priority')
+    parser.add_argument('--reproducibility',  type=str, help='jira reproducibility')
 
     parser.add_argument('--attach-files',     type=str, nargs='*', help='All files are attached into jira ticket')
     parser.add_argument('--upload-files',     type=str, nargs='*', help='All files are uploaded into file server')
@@ -234,6 +240,8 @@ if __name__ == "__main__":
     parser.add_argument('--show-devicename',  action='store_true', help='Show all supported devices')
     parser.add_argument('--attach-crashcounter', action='store_true', help='Attach crashcounter in description')
     parser.add_argument('--show-component-registeredin-project', action='store_true', help='Show all components registered in project')
+
+    # parser.add_argument('--enable-popup',     action='store_true', help='Display the result in a pop-up')
 
     args = parser.parse_args()
 
@@ -258,8 +266,8 @@ if __name__ == "__main__":
     # handle 'id' and 'pw' first
     if args.id is not None or args.pw is not None:
         if args.id is not None and args.pw is not None:
-            common.set_value('account', 'id', None, args.id)
-            common.set_value('account', 'pw', None, args.pw)
+            common.set_value('account', 'id', args.id)
+            common.set_value('account', 'pw', args.pw)
         else:
             common.error("'id' and 'pw' are needed")
             exit(1)
@@ -293,7 +301,7 @@ if __name__ == "__main__":
         else:
             component = args.component
         try:
-            result = WebOSIssue.instance().create_issue(args.summary, args.description, args.unique_summary, component)
+            result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.unique_summary, component)
         except Exception as ex:
             common.error(ex.response.text)
             raise ex

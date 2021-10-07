@@ -27,6 +27,7 @@
 #include <msgpack.h>
 
 #include "FluentBit.h"
+#include "util/ErrCode.h"
 #include "util/JValueUtil.h"
 #include "util/Logger.h"
 #include "util/MSGPackUtil.h"
@@ -67,13 +68,15 @@ extern "C" int collectBugreport(struct flb_input_instance *ins, struct flb_confi
     return BugreportHandler::getInstance().onCollect(ins, config, context);
 }
 
-const LSMethod BugreportHandler::METHOD_TABLE[2] = {
-    { "test", BugreportHandler::_test, LUNA_METHOD_FLAGS_NONE },
+const LSMethod BugreportHandler::METHOD_TABLE[] = {
+    { "getConfig", BugreportHandler::onGetConfig, LUNA_METHOD_FLAGS_NONE },
+    { "setConfig", BugreportHandler::onSetConfig, LUNA_METHOD_FLAGS_NONE },
+    { "createBug", BugreportHandler::onCreateBug, LUNA_METHOD_FLAGS_NONE },
     { nullptr, nullptr }
 };
 
 BugreportHandler::BugreportHandler()
-    : LunaHandle("com.webos.rdx.bugreport")
+    : LunaHandle("com.webos.service.bugreport")
     , m_inputInstance(NULL)
     , m_queue(NULL)
     , m_deviceListSubscriptionToken(LSMESSAGE_TOKEN_INVALID)
@@ -99,7 +102,9 @@ int BugreportHandler::onInit(struct flb_input_instance *ins, struct flb_config *
         PLUGIN_ERROR("Failed in rpa_queue_create");
         return -1;
     }
-    if (!LunaHandle::initialize(m_queue, "/", BugreportHandler::METHOD_TABLE)) {
+    registerCategory("/", BugreportHandler::METHOD_TABLE, NULL, NULL);
+    setCategoryData("/", this);
+    if (!LunaHandle::initialize(m_queue)) {
         PLUGIN_ERROR("Failed to initialize luna handle");
         return -1;
     }
@@ -131,7 +136,7 @@ int BugreportHandler::onCollect(struct flb_input_instance *ins, struct flb_confi
         if (!rpa_queue_timedpop(m_queue, (void **)&message, RPA_WAIT_NONE))
             break;
         PLUGIN_DEBUG("POP %s", message);
-        pbnjson::JValue json = pbnjson::JDomParser::fromString(message);
+        JValue json = pbnjson::JDomParser::fromString(message);
         if (json.isNull() || !json.isValid()) {
             PLUGIN_ERROR("Failed to parse message");
             flb_free((void*)message);
@@ -139,9 +144,11 @@ int BugreportHandler::onCollect(struct flb_input_instance *ins, struct flb_confi
         }
         msgpack_sbuffer_init(&sbuffer);
         msgpack_packer_init(&packer, &sbuffer, msgpack_sbuffer_write);
+
         msgpack_pack_array(&packer, 2);
         flb_pack_time_now(&packer);
         MSGPackUtil::putValue(&packer, "", json);
+
         flb_input_chunk_append_raw(ins, NULL, 0, sbuffer.data, sbuffer.size);
         msgpack_sbuffer_destroy(&sbuffer);
         flb_free((void*)message);
@@ -351,15 +358,159 @@ bool BugreportHandler::onTakeScreenshot(LSHandle *sh, LSMessage *message, void *
     return true;
 }
 
-bool BugreportHandler::test(LSMessage &message)
+bool BugreportHandler::onGetConfig(LSHandle *sh, LSMessage *msg, void *ctx)
 {
-    Message request(&message);
+    BugreportHandler* self = (BugreportHandler*)ctx;
+    if (self == NULL) {
+        PLUGIN_ERROR("ctx is null");
+        return false;
+    }
+    Message request(msg);
     const char* sender = request.getSenderServiceName() != NULL ? request.getSenderServiceName() : request.getApplicationID();
-    PLUGIN_INFO("API-Req(%s) Sender(%s) %s",  request.getKind(), sender, LSMessageGetPayload(&message));
+    PLUGIN_INFO("API-Req(%s) Sender(%s) %s",  request.getKind(), sender, request.getPayload());
 
     pbnjson::JValue responsePayload = pbnjson::Object();
     pbnjson::JValue requestPayload = JDomParser::fromString(request.getPayload());
-    responsePayload.put("returnValue", true);
+    ErrCode errCode = ErrCode_NONE;
+    if (requestPayload.isNull()) {
+        errCode = ErrCode_INVALID_REQUEST_PARAMS;
+        goto Done;
+    }
+
+Done:
+    if (ErrCode_NONE != errCode) {
+        responsePayload.put("returnValue", false);
+        responsePayload.put("errorCode", errCode);
+        responsePayload.put("errorText", strerror(errCode));
+    } else {
+        responsePayload.put("returnValue", true);
+        responsePayload.put("config", self->m_configManager.getConfig());
+    }
+    try {
+        request.respond(responsePayload.stringify().c_str());
+    } catch(exception& e) {
+        PLUGIN_ERROR("Failed to respond: %s", e.what());
+        return false;
+    }
+    PLUGIN_INFO("API-Res(%s) Sender(%s) %s",  request.getKind(), sender, responsePayload.stringify().c_str());
+    return true;
+}
+
+bool BugreportHandler::onSetConfig(LSHandle *sh, LSMessage *msg, void *ctx)
+{
+    BugreportHandler* self = (BugreportHandler*)ctx;
+    if (self == NULL) {
+        PLUGIN_ERROR("ctx is null");
+        return false;
+    }
+    Message request(msg);
+    const char* sender = request.getSenderServiceName() != NULL ? request.getSenderServiceName() : request.getApplicationID();
+    PLUGIN_INFO("API-Req(%s) Sender(%s) %s",  request.getKind(), sender, request.getPayload());
+
+    JValue requestPayload = JDomParser::fromString(request.getPayload());
+    JValue responsePayload = Object();
+    ErrCode errCode = ErrCode_NONE;
+    string username, password;
+    if (requestPayload.isNull()) {
+        errCode = ErrCode_INVALID_REQUEST_PARAMS;
+        goto Done;
+    }
+    if (!JValueUtil::getValue(requestPayload, "username", username)) {
+        errCode = ErrCode_INVALID_REQUEST_PARAMS;
+        goto Done;
+    }
+    if (!JValueUtil::getValue(requestPayload, "password", password)) {
+        errCode = ErrCode_INVALID_REQUEST_PARAMS;
+        goto Done;
+    }
+    if (!self->m_configManager.setConfig(username, password)) {
+        errCode = ErrCode_INTERNAL_ERROR;
+        goto Done;
+    }
+
+Done:
+    if (ErrCode_NONE != errCode) {
+        responsePayload.put("returnValue", false);
+        responsePayload.put("errorCode", errCode);
+        responsePayload.put("errorText", strerror(errCode));
+    } else {
+        responsePayload.put("returnValue", true);
+        responsePayload.put("config", self->m_configManager.getConfig());
+    }
+    try {
+        request.respond(responsePayload.stringify().c_str());
+    } catch(exception& e) {
+        PLUGIN_ERROR("Failed to respond: %s", e.what());
+        return false;
+    }
+    PLUGIN_INFO("API-Res(%s) Sender(%s) %s",  request.getKind(), sender, responsePayload.stringify().c_str());
+    return true;
+}
+
+bool BugreportHandler::onCreateBug(LSHandle *sh, LSMessage *msg, void *ctx)
+{
+    BugreportHandler* self = (BugreportHandler*)ctx;
+    if (self == NULL) {
+        PLUGIN_ERROR("ctx is null");
+        return false;
+    }
+    Message request(msg);
+    const char* sender = request.getSenderServiceName() != NULL ? request.getSenderServiceName() : request.getApplicationID();
+    PLUGIN_INFO("API-Req(%s) Sender(%s) %s",  request.getKind(), sender, request.getPayload());
+
+    JValue requestPayload = JDomParser::fromString(request.getPayload());
+    JValue responsePayload = Object();
+    ErrCode errCode = ErrCode_NONE;
+    string summary, screenshots, priority, reproducibility;
+    string username, password;
+    JValue config = Object();
+    JValue payload = Object();
+    string payloadStr;
+    char* buffer;
+    if (requestPayload.isNull()) {
+        errCode = ErrCode_INVALID_REQUEST_PARAMS;
+        goto Done;
+    }
+    if (!JValueUtil::getValue(requestPayload, "summary", summary)) {
+        errCode = ErrCode_INVALID_REQUEST_PARAMS;
+        goto Done;
+    }
+    payload.put("summary", summary);
+    if (JValueUtil::getValue(requestPayload, "screenshots", screenshots)) {
+        payload.put("upload-files", screenshots);
+    }
+    if (JValueUtil::getValue(requestPayload, "priority", priority)) {
+        payload.put("priority", priority);
+    }
+    if (JValueUtil::getValue(requestPayload, "reproducibility", reproducibility)) {
+        payload.put("reproducibility", reproducibility);
+    }
+    if (!self->m_configManager.getUsername().empty()) {
+        payload.put("username", self->m_configManager.getUsername());
+    }
+    if (!self->m_configManager.getPassword().empty()) {
+        payload.put("password", self->m_configManager.getPassword());
+    }
+    payloadStr = payload.stringify();
+    buffer = (char*)flb_malloc(payloadStr.length() + 1);
+    if (buffer == NULL) {
+        PLUGIN_ERROR("Failed in flb_malloc");
+        errCode = ErrCode_INTERNAL_ERROR;
+        goto Done;
+    }
+    strncpy(buffer, payloadStr.c_str(), payloadStr.length());
+    buffer[payloadStr.length()] = '\0';
+    PLUGIN_DEBUG("PUSH %s", buffer);
+    rpa_queue_push(self->m_queue, (void*)buffer);
+
+Done:
+    if (ErrCode_NONE != errCode) {
+        responsePayload.put("returnValue", false);
+        responsePayload.put("errorCode", errCode);
+        responsePayload.put("errorText", strerror(errCode));
+    } else {
+        responsePayload.put("returnValue", true);
+    }
     try {
         request.respond(responsePayload.stringify().c_str());
     } catch(exception& e) {

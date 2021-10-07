@@ -1,6 +1,9 @@
 {
-    "allowedNames" : [
-        "com.webos.rdx.*"
+    "allowedNames": [
+        "com.webos.rdx.*",
+        "com.webos.service.bugreport"
     ],
-    "diagnostics.telemetry": ["oem"]
+    "diagnostics.telemetry": [
+        "oem"
+    ]
 }

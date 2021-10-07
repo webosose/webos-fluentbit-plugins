@@ -37,18 +37,12 @@ static int bugreport_collect(struct flb_input_instance *ins, struct flb_config *
     return collectBugreport(ins, config, context);
 }
 
-static int bugreport_prerun(struct flb_input_instance *ins, struct flb_config *config, void *context)
-{
-    PLUGIN_INFO();
-    return 0;
-}
-
 /* Plugin reference */
 struct flb_input_plugin in_bugreport_plugin = {
     .name = "bugreport",
     .description = "Collect information for bugreport",
     .cb_init = bugreport_init,
-    .cb_pre_run = bugreport_prerun,
+    .cb_pre_run = NULL,
     .cb_collect = bugreport_collect,
     .cb_flush_buf = NULL,
     .cb_pause = NULL,

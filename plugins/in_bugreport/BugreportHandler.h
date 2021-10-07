@@ -19,6 +19,7 @@
 
 #include <string>
 
+#include "BugreportConfigManager.h"
 #include "FluentBit.h"
 #include "bus/LunaHandle.h"
 #include "external/rpa_queue.h"
@@ -37,27 +38,23 @@ public:
     int onExit(void *in_context, struct flb_config *config);
     int onCollect(struct flb_input_instance *ins, struct flb_config *config, void *in_context);
 
-protected:
-    static bool _test(LSHandle *sh, LSMessage *msg, void *context)
-    {
-        BugreportHandler *self = (BugreportHandler*)context;
-        return self->test(*msg);
-    }
-
-    bool test(LSMessage &message);
-
 private:
     static bool onDeviceListChanged(LSHandle *sh, LSMessage *reply, void *ctx);
     static int findKeyboardFd();
     static gboolean onKeyboardEvent(GIOChannel *channel, GIOCondition condition, gpointer data);
     static bool onTakeScreenshot(LSHandle *sh, LSMessage *message, void *ctx);
 
+    // APIs
+    static bool onGetConfig(LSHandle *sh, LSMessage *msg, void *ctx);
+    static bool onSetConfig(LSHandle *sh, LSMessage *msg, void *ctx);
+    static bool onCreateBug(LSHandle *sh, LSMessage *msg, void *ctx);
+
     BugreportHandler();
 
     bool onRegisterServerStatus(bool isConnected);
     void takeScreenshot();
 
-    static const LSMethod METHOD_TABLE[2];
+    static const LSMethod METHOD_TABLE[];
 
     struct flb_input_instance *m_inputInstance;
     rpa_queue_t *m_queue;
@@ -66,6 +63,8 @@ private:
     int m_keyboardFd;
     bool m_isAltPressed;
     bool m_isCtrlPressed;
+
+    BugreportConfigManager m_configManager;
 };
 
 #endif
