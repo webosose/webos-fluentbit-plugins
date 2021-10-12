@@ -14,12 +14,11 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef BUGREPORTCONFIGMANAGER_H_
-#define BUGREPORTCONFIGMANAGER_H_
+#ifndef BUGREPORTSCREENSHOTMANAGER_H_
+#define BUGREPORTSCREENSHOTMANAGER_H_
 
 #include <list>
 #include <string>
-#include <pbnjson.hpp>
 
 #include "FluentBit.h"
 #include "bus/LunaHandle.h"
@@ -28,20 +27,22 @@
 
 using namespace std;
 
-class BugreportConfigManager : public IClassName {
+class BugreportScreenshotManager : public IClassName {
 public:
-    BugreportConfigManager();
-    virtual ~BugreportConfigManager();
+    BugreportScreenshotManager();
+    virtual ~BugreportScreenshotManager();
 
-    JValue getConfig() const;
-    bool setConfig(const string& username, const string& password);
+    bool initialize(LunaHandle* lunaHandle);
+    bool finalize();
 
-    string getUsername() const;
-    string getPassword() const;
-    string generateJiraSummary() const;
+    string takeScreenshot();
+    void removeAll();
+    const list<string> getScreenshots() const;
+    string toString() const;
 
 private:
-    JValue m_config;
+    LunaHandle* m_lunaHandle;
+    list<string> m_screenshots;
 };
 
 #endif

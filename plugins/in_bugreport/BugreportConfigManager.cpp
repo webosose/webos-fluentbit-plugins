@@ -16,6 +16,7 @@
 
 #include "BugreportConfigManager.h"
 
+#include "Environment.h"
 #include "util/JValueUtil.h"
 
 BugreportConfigManager::BugreportConfigManager()
@@ -62,4 +63,15 @@ string BugreportConfigManager::getPassword() const
     if (!JValueUtil::getValue(m_config, "password", password))
         return "";
     return password;
+}
+
+string BugreportConfigManager::generateJiraSummary() const
+{
+    string foundOn = "[" WEBOS_TARGET_DISTRO "-" WEBOS_TARGET_MACHINE "]";
+    string username = getUsername().empty() ? JIRA_DEFAULT_USERNAME : getUsername();
+    auto now = std::chrono::system_clock::now();
+    auto timenow = std::chrono::system_clock::to_time_t(now);
+    char buff[20];
+    std::strftime(buff, sizeof(buff), "%Y%m%d%H%M", std::localtime(&timenow));
+    return foundOn + " " + username + "_" + buff;
 }

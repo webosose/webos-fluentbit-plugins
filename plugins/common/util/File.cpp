@@ -16,6 +16,8 @@
 
 #include "File.h"
 
+#include <dirent.h>
+#include <glib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -102,6 +104,37 @@ bool File::isFile(const string& path)
 bool File::createFile(const string& path)
 {
     return File::writeFile(path, "");
+}
+
+
+bool File::createDir(const string& path)
+{
+    return (0 == g_mkdir_with_parents(path.c_str(), 0755));
+}
+
+bool File::removeDir(const string& path)
+{
+    std::string command = "rm -rf " + path;
+    int rc = ::system(command.c_str());
+    return WIFEXITED(rc) && WEXITSTATUS(rc) == 0;
+}
+
+bool File::listFiles(const string& path, list<string>& files)
+{
+    DIR *dir;
+    struct dirent *dirent;
+    if ((dir = opendir(path.c_str())) != NULL) {
+        while ((dirent = readdir(dir)) != NULL) {
+            if (strcmp(".", dirent->d_name) == 0)
+                continue;
+            if (strcmp("..", dirent->d_name) == 0)
+                continue;
+            files.emplace_back(dirent->d_name);
+        }
+        (void)closedir(dir);
+        return true;
+    }
+    return false;
 }
 
 string File::join(const string& a, const string& b)

@@ -22,6 +22,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <list>
 #include <sstream>
 #include <string>
 
@@ -36,6 +37,9 @@ class File {
     static bool isDirectory(const string& path);
     static bool isFile(const string& path);
     static bool createFile(const string& path);
+    static bool createDir(const string& path);
+    static bool removeDir(const string& path);
+    static bool listFiles(const string& path, list<string>& files);
 
     static string join(const string& a, const string& b);
 

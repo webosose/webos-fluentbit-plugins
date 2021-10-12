@@ -19,6 +19,8 @@
 #include "util/JValueUtil.h"
 #include "util/Logger.h"
 
+unsigned long LunaHandle::TIMEOUT = 5000;
+
 void* LunaHandle::onThread(void *ctx)
 {
     LunaHandle* self = (LunaHandle*)ctx;
@@ -45,16 +47,12 @@ LunaHandle::~LunaHandle()
     g_main_loop_unref(m_mainLoop);
 }
 
-bool LunaHandle::initialize(rpa_queue_t *queue, const char *category, const LSMethod *methods)
+bool LunaHandle::initialize(rpa_queue_t *queue)
 {
     PLUGIN_INFO("%s", getName());
     m_queue = queue;
 
     try {
-        if (category != NULL && methods != NULL) {
-            PLUGIN_INFO("registerCategory %s %s", category, methods->name);
-            Handle::registerCategory(category, methods, nullptr, nullptr);
-        }
         Handle::attachToLoop(m_mainLoop);
         PLUGIN_INFO("GMainLoop attached");
     } catch(exception& e) {

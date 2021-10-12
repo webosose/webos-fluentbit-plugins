@@ -26,6 +26,7 @@
 #include <sys/syscall.h>
 #include <msgpack.h>
 
+#include "Environment.h"
 #include "FluentBit.h"
 #include "util/ErrCode.h"
 #include "util/JValueUtil.h"
@@ -110,6 +111,10 @@ int BugreportHandler::onInit(struct flb_input_instance *ins, struct flb_config *
     }
     m_serverStatus = LunaHandle::registerServerStatus("com.webos.service.pdm",
             std::bind(&BugreportHandler::onRegisterServerStatus, this, placeholders::_1));
+    if (!m_screenshotManager.initialize(this)) {
+        PLUGIN_ERROR("Failed to initialize screenshot manager");
+        return -1;
+    }
     // fluentbit engine calls 'onExit' when terminating, only if context is registered.
     flb_input_set_context(ins, this);
     if (flb_input_set_collector_time(ins, collectBugreport, DEFAULT_INTERVAL_SEC, DEFAULT_INTERVAL_NSEC, config) == -1) {
@@ -124,6 +129,8 @@ int BugreportHandler::onInit(struct flb_input_instance *ins, struct flb_config *
 int BugreportHandler::onExit(void *context, struct flb_config *config)
 {
     PLUGIN_INFO();
+    m_screenshotManager.finalize();
+    LunaHandle::finalize();
     return 0;
 }
 
@@ -284,47 +291,62 @@ gboolean BugreportHandler::onKeyboardEvent(GIOChannel *channel, GIOCondition con
     }
 
     if (ev[0].value != ' ' && ev[1].type == 1) {
-        PLUGIN_DEBUG("Received key code %d(%s)", ev[1].code, ev[1].value == 1 ? "DOWN" : "UP");
+        // PLUGIN_DEBUG("Received key code %d(%s)", ev[1].code, ev[1].value == 1 ? "DOWN" : "UP");
         switch (ev[1].code) {
             case KEYCODE_LEFT_CTRL:
+            {
                 self->m_isCtrlPressed = (ev[1].value == 1) ? true : false;
                 PLUGIN_DEBUG("CTRL %s", (self->m_isCtrlPressed) ? "DOWN" : "UP");
                 break;
+            }
             case KEYCODE_LEFT_ALT:
+            {
                 self->m_isAltPressed = (ev[1].value == 1) ? true : false;
                 PLUGIN_DEBUG("ALT %s", (self->m_isAltPressed) ? "DOWN" : "UP");
                 break;
-            case KEYCODE_F11:
-                if (ev[1].value == 1 && self->m_isCtrlPressed) {
-                    if (self->m_isAltPressed) {
-                        PLUGIN_INFO("CTRL + ALT + F11");
-                        // push message in queue
-                        string str = "{\"key\": \"test message\"}";
-                        char* buffer = (char*)flb_malloc(str.length() + 1);
-                        if (buffer == NULL) {
-                            PLUGIN_ERROR("Failed in flb_malloc");
-                            return true;
-                        }
-                        strncpy(buffer, str.c_str(), str.length());
-                        buffer[str.length()] = '\0';
-                        PLUGIN_DEBUG("PUSH %s", buffer);
-                        rpa_queue_push(self->m_queue, (void*)buffer);
-                    } else {
-                        PLUGIN_INFO("CTRL + F11");
-                    }
-                }
-                break;
+            }
             case KEYCODE_F9:
-                if (ev[1].value == 1 && self->m_isCtrlPressed) {
-                    if (self->m_isAltPressed) {
-                        PLUGIN_INFO("CTRL + ALT + F9");
-                    } else {
-                        PLUGIN_INFO("CTRL + F9");
-                        PLUGIN_INFO("Take a screenshot into /tmp/capture/screenshot<N>.jpg");
-                        self->takeScreenshot();
-                    }
-                }
+            {
+                if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
+                    break;
+                PLUGIN_INFO("[CTRL][ALT][F9] Take screenshot");
+                string screenshotFile = self->m_screenshotManager.takeScreenshot();
+                if (screenshotFile.empty())
+                    self->createToast("Taking screenshot fails!");
+                else
+                    self->createToast(screenshotFile + " captured!");
                 break;
+            }
+            case KEYCODE_F10:
+            {
+                if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
+                    break;
+                PLUGIN_INFO("[CTRL][ALT][F10] Remove screenshot");
+                self->m_screenshotManager.removeAll();
+                self->createToast("Screenshots removed!");
+                break;
+            }
+            case KEYCODE_F11:
+            {
+                if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
+                    break;
+                PLUGIN_INFO("[CTRL][ALT][F11] Launch bugreport app");
+                self->launchBugreportApp();
+                break;
+            }
+            case KEYCODE_F12:
+            {
+                if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
+                    break;
+                PLUGIN_INFO("[CTRL][ALT][F12] Create bug");
+                if (self->m_screenshotManager.toString().empty())
+                    self->m_screenshotManager.takeScreenshot();
+                JValue payload = Object();
+                payload.put("summary", self->m_configManager.generateJiraSummary());
+                payload.put("upload-files", self->m_screenshotManager.toString());
+                (void)self->pushToRpaQueue(payload);
+                break;
+            }
             default:
                 break;
         }
@@ -332,19 +354,18 @@ gboolean BugreportHandler::onKeyboardEvent(GIOChannel *channel, GIOCondition con
     return TRUE;
 }
 
-void BugreportHandler::takeScreenshot()
+void BugreportHandler::createToast(const string& message)
 {
-    PLUGIN_INFO();
-    string filepath = "/tmp/capture/test.jpg";
+    PLUGIN_INFO("%s", message.c_str());
     pbnjson::JValue payload = Object();
-    payload.put("output", filepath);
-    payload.put("format", "JPG");
+    payload.put("sourceId", "com.webos.service.bugreport");
+    payload.put("message", message);
 
     LSErrorSafe lserror;
     if (!LSCallOneReply(LunaHandle::get(),
-            "luna://com.webos.surfacemanager/captureCompositorOutput",
+            "luna://com.webos.notification/createToast",
             payload.stringify().c_str(),
-            (LSFilterFunc)BugreportHandler::onTakeScreenshot,
+            (LSFilterFunc)BugreportHandler::onCreateToast,
             this,
             NULL,
             &lserror)) {
@@ -352,9 +373,45 @@ void BugreportHandler::takeScreenshot()
     }
 }
 
-bool BugreportHandler::onTakeScreenshot(LSHandle *sh, LSMessage *message, void *ctx)
+bool BugreportHandler::onCreateToast(LSHandle *sh, LSMessage *message, void *ctx)
 {
     PLUGIN_INFO("%s", LSMessageGetPayload(message));
+    return true;
+}
+
+void BugreportHandler::launchBugreportApp()
+{
+    PLUGIN_INFO();
+    LSErrorSafe lserror;
+    if (!LSCallOneReply(LunaHandle::get(),
+            "luna://com.webos.service.applicationmanager/launch",
+            "{\"id\":\"com.palm.app.bugreport\"}",
+            (LSFilterFunc)BugreportHandler::onLaunchBugreportApp,
+            this,
+            NULL,
+            &lserror)) {
+        PLUGIN_ERROR("Failed in LSCall (%d) %s", lserror.error_code, lserror.message);
+    }
+}
+
+bool BugreportHandler::onLaunchBugreportApp(LSHandle *sh, LSMessage *message, void *ctx)
+{
+    PLUGIN_INFO("%s", LSMessageGetPayload(message));
+    return true;
+}
+
+bool BugreportHandler::pushToRpaQueue(JValue payload)
+{
+    string payloadStr = payload.stringify();
+    char* buffer = (char*)flb_malloc(payloadStr.length() + 1);
+    if (buffer == NULL) {
+        PLUGIN_ERROR("Failed in flb_malloc");
+        return false;
+    }
+    strncpy(buffer, payloadStr.c_str(), payloadStr.length());
+    buffer[payloadStr.length()] = '\0';
+    PLUGIN_DEBUG("PUSH %s", buffer);
+    rpa_queue_push(m_queue, (void*)buffer);
     return true;
 }
 
@@ -415,11 +472,11 @@ bool BugreportHandler::onSetConfig(LSHandle *sh, LSMessage *msg, void *ctx)
         errCode = ErrCode_INVALID_REQUEST_PARAMS;
         goto Done;
     }
-    if (!JValueUtil::getValue(requestPayload, "username", username)) {
+    if (!JValueUtil::getValue(requestPayload, "username", username) || username.empty()) {
         errCode = ErrCode_INVALID_REQUEST_PARAMS;
         goto Done;
     }
-    if (!JValueUtil::getValue(requestPayload, "password", password)) {
+    if (!JValueUtil::getValue(requestPayload, "password", password) || password.empty()) {
         errCode = ErrCode_INVALID_REQUEST_PARAMS;
         goto Done;
     }
@@ -491,17 +548,10 @@ bool BugreportHandler::onCreateBug(LSHandle *sh, LSMessage *msg, void *ctx)
     if (!self->m_configManager.getPassword().empty()) {
         payload.put("password", self->m_configManager.getPassword());
     }
-    payloadStr = payload.stringify();
-    buffer = (char*)flb_malloc(payloadStr.length() + 1);
-    if (buffer == NULL) {
-        PLUGIN_ERROR("Failed in flb_malloc");
+    if (!self->pushToRpaQueue(payload)) {
         errCode = ErrCode_INTERNAL_ERROR;
         goto Done;
     }
-    strncpy(buffer, payloadStr.c_str(), payloadStr.length());
-    buffer[payloadStr.length()] = '\0';
-    PLUGIN_DEBUG("PUSH %s", buffer);
-    rpa_queue_push(self->m_queue, (void*)buffer);
 
 Done:
     if (ErrCode_NONE != errCode) {

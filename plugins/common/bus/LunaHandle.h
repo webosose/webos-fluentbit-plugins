@@ -46,13 +46,14 @@ public:
 
 class LunaHandle : public LS::Handle,
                    public IClassName {
-friend class ISingleton<LunaHandle>;
 public:
     LunaHandle(const char* name);
     virtual ~LunaHandle();
 
-    bool initialize(rpa_queue_t* queue = NULL, const char *category = NULL, const LSMethod *methods = NULL);
+    bool initialize(rpa_queue_t* queue = NULL);
     void finalize(void);
+
+    static unsigned long TIMEOUT;
 
 private:
     static void *onThread(void *ctx);

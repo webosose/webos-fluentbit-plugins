@@ -20,6 +20,7 @@
 #include <string>
 
 #include "BugreportConfigManager.h"
+#include "BugreportScreenshotManager.h"
 #include "FluentBit.h"
 #include "bus/LunaHandle.h"
 #include "external/rpa_queue.h"
@@ -42,8 +43,8 @@ private:
     static bool onDeviceListChanged(LSHandle *sh, LSMessage *reply, void *ctx);
     static int findKeyboardFd();
     static gboolean onKeyboardEvent(GIOChannel *channel, GIOCondition condition, gpointer data);
-    static bool onTakeScreenshot(LSHandle *sh, LSMessage *message, void *ctx);
-
+    static bool onCreateToast(LSHandle *sh, LSMessage *message, void *ctx);
+    static bool onLaunchBugreportApp(LSHandle *sh, LSMessage *message, void *ctx);
     // APIs
     static bool onGetConfig(LSHandle *sh, LSMessage *msg, void *ctx);
     static bool onSetConfig(LSHandle *sh, LSMessage *msg, void *ctx);
@@ -52,7 +53,9 @@ private:
     BugreportHandler();
 
     bool onRegisterServerStatus(bool isConnected);
-    void takeScreenshot();
+    void createToast(const string& message);
+    void launchBugreportApp();
+    bool pushToRpaQueue(JValue payload);
 
     static const LSMethod METHOD_TABLE[];
 
@@ -65,6 +68,7 @@ private:
     bool m_isCtrlPressed;
 
     BugreportConfigManager m_configManager;
+    BugreportScreenshotManager m_screenshotManager;
 };
 
 #endif
