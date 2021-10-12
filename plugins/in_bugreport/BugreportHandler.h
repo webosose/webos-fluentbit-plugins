@@ -26,6 +26,7 @@
 #include "external/rpa_queue.h"
 #include "interface/IClassName.h"
 #include "interface/ISingleton.h"
+#include "util/ErrCode.h"
 
 using namespace std;
 
@@ -45,10 +46,7 @@ private:
     static gboolean onKeyboardEvent(GIOChannel *channel, GIOCondition condition, gpointer data);
     static bool onCreateToast(LSHandle *sh, LSMessage *message, void *ctx);
     static bool onLaunchBugreportApp(LSHandle *sh, LSMessage *message, void *ctx);
-    // APIs
-    static bool onGetConfig(LSHandle *sh, LSMessage *msg, void *ctx);
-    static bool onSetConfig(LSHandle *sh, LSMessage *msg, void *ctx);
-    static bool onCreateBug(LSHandle *sh, LSMessage *msg, void *ctx);
+    static bool onProcessMethod(LSHandle *sh, LSMessage *msg, void *ctx);
 
     BugreportHandler();
 
@@ -57,7 +55,17 @@ private:
     void launchBugreportApp();
     bool pushToRpaQueue(JValue payload);
 
+    ErrCode getConfig(JValue& requestPayload, JValue& responsePayload);
+    ErrCode setConfig(JValue& requestPayload, JValue& responsePayload);
+    ErrCode createBug(JValue& requestPayload, JValue& responsePayload);
+    ErrCode processDeprecatedMethod(JValue& = Null, JValue& = Null);
+    ErrCode processF9(JValue& = Null , JValue& = Null);
+    ErrCode processF10(JValue& = Null , JValue& = Null);
+    ErrCode processF11(JValue& = Null , JValue& = Null);
+    ErrCode processF12(JValue& = Null , JValue& = Null);
+
     static const LSMethod METHOD_TABLE[];
+    static JValue Null;
 
     struct flb_input_instance *m_inputInstance;
     rpa_queue_t *m_queue;

@@ -17,6 +17,7 @@
 #include "BugreportHandler.h"
 
 #include <fcntl.h>
+#include <functional>
 #include <linux/input.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -70,11 +71,34 @@ extern "C" int collectBugreport(struct flb_input_instance *ins, struct flb_confi
 }
 
 const LSMethod BugreportHandler::METHOD_TABLE[] = {
-    { "getConfig", BugreportHandler::onGetConfig, LUNA_METHOD_FLAGS_NONE },
-    { "setConfig", BugreportHandler::onSetConfig, LUNA_METHOD_FLAGS_NONE },
-    { "createBug", BugreportHandler::onCreateBug, LUNA_METHOD_FLAGS_NONE },
+    { "getConfig",               BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "setConfig",               BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "createBug",               BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "disableCrashPopup",       BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "disableCrashReporting",   BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "doHeadlessBugReport",     BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "enableCrashPopup",        BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "enableCrashReporting",    BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "fileBugReport",           BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "fileCrashReport",         BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "getBuildMaxAge",          BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "getBugReportingConfig",   BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "getCrashReportingJira",   BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "isCrashPopupEnabled",     BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "isCrashReportingEnabled", BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "prepareBugReport",        BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "removeCredential",        BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "resetScreenshots",        BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "setBuildMaxAge",          BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "setCrashReportingJira",   BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "signInToJira",            BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "signOutFromJira",         BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "storeCredential",         BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "takeScreenshot",          BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
     { nullptr, nullptr }
 };
+
+JValue BugreportHandler::Null = Object();
 
 BugreportHandler::BugreportHandler()
     : LunaHandle("com.webos.service.bugreport")
@@ -99,6 +123,14 @@ int BugreportHandler::onInit(struct flb_input_instance *ins, struct flb_config *
     PLUGIN_INFO();
     m_inputInstance = ins;
 
+    if (!m_configManager.initialize()) {
+        PLUGIN_ERROR("Failed to initialize config manager");
+        return -1;
+    }
+    if (!m_screenshotManager.initialize(this)) {
+        PLUGIN_ERROR("Failed to initialize screenshot manager");
+        return -1;
+    }
     if (!rpa_queue_create(&m_queue, DEFAULT_QUEUE_CAPACITY)) {
         PLUGIN_ERROR("Failed in rpa_queue_create");
         return -1;
@@ -107,14 +139,12 @@ int BugreportHandler::onInit(struct flb_input_instance *ins, struct flb_config *
     setCategoryData("/", this);
     if (!LunaHandle::initialize(m_queue)) {
         PLUGIN_ERROR("Failed to initialize luna handle");
+        rpa_queue_term(m_queue);
+        rpa_queue_destroy(m_queue);
         return -1;
     }
     m_serverStatus = LunaHandle::registerServerStatus("com.webos.service.pdm",
             std::bind(&BugreportHandler::onRegisterServerStatus, this, placeholders::_1));
-    if (!m_screenshotManager.initialize(this)) {
-        PLUGIN_ERROR("Failed to initialize screenshot manager");
-        return -1;
-    }
     // fluentbit engine calls 'onExit' when terminating, only if context is registered.
     flb_input_set_context(ins, this);
     if (flb_input_set_collector_time(ins, collectBugreport, DEFAULT_INTERVAL_SEC, DEFAULT_INTERVAL_NSEC, config) == -1) {
@@ -129,8 +159,11 @@ int BugreportHandler::onInit(struct flb_input_instance *ins, struct flb_config *
 int BugreportHandler::onExit(void *context, struct flb_config *config)
 {
     PLUGIN_INFO();
-    m_screenshotManager.finalize();
     LunaHandle::finalize();
+    rpa_queue_term(m_queue);
+    rpa_queue_destroy(m_queue);
+    m_screenshotManager.finalize();
+    m_configManager.finalize();
     return 0;
 }
 
@@ -309,42 +342,28 @@ gboolean BugreportHandler::onKeyboardEvent(GIOChannel *channel, GIOCondition con
             {
                 if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
                     break;
-                PLUGIN_INFO("[CTRL][ALT][F9] Take screenshot");
-                string screenshotFile = self->m_screenshotManager.takeScreenshot();
-                if (screenshotFile.empty())
-                    self->createToast("Taking screenshot fails!");
-                else
-                    self->createToast(screenshotFile + " captured!");
+                self->processF9();
                 break;
             }
             case KEYCODE_F10:
             {
                 if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
                     break;
-                PLUGIN_INFO("[CTRL][ALT][F10] Remove screenshot");
-                self->m_screenshotManager.removeAll();
-                self->createToast("Screenshots removed!");
+                self->processF10();
                 break;
             }
             case KEYCODE_F11:
             {
                 if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
                     break;
-                PLUGIN_INFO("[CTRL][ALT][F11] Launch bugreport app");
-                self->launchBugreportApp();
+                self->processF11();
                 break;
             }
             case KEYCODE_F12:
             {
                 if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
                     break;
-                PLUGIN_INFO("[CTRL][ALT][F12] Create bug");
-                if (self->m_screenshotManager.toString().empty())
-                    self->m_screenshotManager.takeScreenshot();
-                JValue payload = Object();
-                payload.put("summary", self->m_configManager.generateJiraSummary());
-                payload.put("upload-files", self->m_screenshotManager.toString());
-                (void)self->pushToRpaQueue(payload);
+                self->processF12();
                 break;
             }
             default:
@@ -411,12 +430,38 @@ bool BugreportHandler::pushToRpaQueue(JValue payload)
     strncpy(buffer, payloadStr.c_str(), payloadStr.length());
     buffer[payloadStr.length()] = '\0';
     PLUGIN_DEBUG("PUSH %s", buffer);
-    rpa_queue_push(m_queue, (void*)buffer);
-    return true;
+    return rpa_queue_push(m_queue, (void*)buffer);
 }
 
-bool BugreportHandler::onGetConfig(LSHandle *sh, LSMessage *msg, void *ctx)
+bool BugreportHandler::onProcessMethod(LSHandle *sh, LSMessage *msg, void *ctx)
 {
+    typedef ErrCode (BugreportHandler::*MethodProcessor)(JValue&, JValue&);
+    static map<string, MethodProcessor> methods = {
+            { "/getConfig",               &BugreportHandler::getConfig },
+            { "/setConfig",               &BugreportHandler::setConfig },
+            { "/createBug",               &BugreportHandler::createBug },
+            { "/disableCrashPopup",       &BugreportHandler::processDeprecatedMethod },
+            { "/disableCrashReporting",   &BugreportHandler::processDeprecatedMethod },
+            { "/doHeadlessBugReport",     &BugreportHandler::processF12 },
+            { "/enableCrashPopup",        &BugreportHandler::processDeprecatedMethod },
+            { "/enableCrashReporting",    &BugreportHandler::processDeprecatedMethod },
+            { "/fileBugReport",           &BugreportHandler::createBug },
+            { "/fileCrashReport",         &BugreportHandler::processDeprecatedMethod },
+            { "/getBuildMaxAge",          &BugreportHandler::processDeprecatedMethod },
+            { "/getBugReportingConfig",   &BugreportHandler::processDeprecatedMethod },
+            { "/getCrashReportingJira",   &BugreportHandler::processDeprecatedMethod },
+            { "/isCrashPopupEnabled",     &BugreportHandler::processDeprecatedMethod },
+            { "/isCrashReportingEnabled", &BugreportHandler::processDeprecatedMethod },
+            { "/prepareBugReport",        &BugreportHandler::processF11 },
+            { "/removeCredential",        &BugreportHandler::processDeprecatedMethod },
+            { "/resetScreenshots",        &BugreportHandler::processF10 },
+            { "/setBuildMaxAge",          &BugreportHandler::processDeprecatedMethod },
+            { "/setCrashReportingJira",   &BugreportHandler::processDeprecatedMethod },
+            { "/signInToJira",            &BugreportHandler::setConfig },
+            { "/signOutFromJira",         &BugreportHandler::processDeprecatedMethod },
+            { "/storeCredential",         &BugreportHandler::setConfig },
+            { "/takeScreenshot",          &BugreportHandler::processF9 },
+    };
     BugreportHandler* self = (BugreportHandler*)ctx;
     if (self == NULL) {
         PLUGIN_ERROR("ctx is null");
@@ -424,66 +469,24 @@ bool BugreportHandler::onGetConfig(LSHandle *sh, LSMessage *msg, void *ctx)
     }
     Message request(msg);
     const char* sender = request.getSenderServiceName() != NULL ? request.getSenderServiceName() : request.getApplicationID();
-    PLUGIN_INFO("API-Req(%s) Sender(%s) %s",  request.getKind(), sender, request.getPayload());
-
-    pbnjson::JValue responsePayload = pbnjson::Object();
-    pbnjson::JValue requestPayload = JDomParser::fromString(request.getPayload());
-    ErrCode errCode = ErrCode_NONE;
-    if (requestPayload.isNull()) {
-        errCode = ErrCode_INVALID_REQUEST_PARAMS;
-        goto Done;
-    }
-
-Done:
-    if (ErrCode_NONE != errCode) {
-        responsePayload.put("returnValue", false);
-        responsePayload.put("errorCode", errCode);
-        responsePayload.put("errorText", strerror(errCode));
-    } else {
-        responsePayload.put("returnValue", true);
-        responsePayload.put("config", self->m_configManager.getConfig());
-    }
-    try {
-        request.respond(responsePayload.stringify().c_str());
-    } catch(exception& e) {
-        PLUGIN_ERROR("Failed to respond: %s", e.what());
-        return false;
-    }
-    PLUGIN_INFO("API-Res(%s) Sender(%s) %s",  request.getKind(), sender, responsePayload.stringify().c_str());
-    return true;
-}
-
-bool BugreportHandler::onSetConfig(LSHandle *sh, LSMessage *msg, void *ctx)
-{
-    BugreportHandler* self = (BugreportHandler*)ctx;
-    if (self == NULL) {
-        PLUGIN_ERROR("ctx is null");
-        return false;
-    }
-    Message request(msg);
-    const char* sender = request.getSenderServiceName() != NULL ? request.getSenderServiceName() : request.getApplicationID();
-    PLUGIN_INFO("API-Req(%s) Sender(%s) %s",  request.getKind(), sender, request.getPayload());
-
+    PLUGIN_INFO("Kind(%s) Sender(%s) %s",  request.getKind(), sender, request.getPayload());
     JValue requestPayload = JDomParser::fromString(request.getPayload());
     JValue responsePayload = Object();
     ErrCode errCode = ErrCode_NONE;
-    string username, password;
-    if (requestPayload.isNull()) {
-        errCode = ErrCode_INVALID_REQUEST_PARAMS;
-        goto Done;
-    }
-    if (!JValueUtil::getValue(requestPayload, "username", username) || username.empty()) {
-        errCode = ErrCode_INVALID_REQUEST_PARAMS;
-        goto Done;
-    }
-    if (!JValueUtil::getValue(requestPayload, "password", password) || password.empty()) {
-        errCode = ErrCode_INVALID_REQUEST_PARAMS;
-        goto Done;
-    }
-    if (!self->m_configManager.setConfig(username, password)) {
+    MethodProcessor mp;
+    auto it = methods.find(request.getKind());
+    if (it == methods.end()) {
+        PLUGIN_ERROR("Method not found : %s", request.getKind());
         errCode = ErrCode_INTERNAL_ERROR;
         goto Done;
     }
+    if (requestPayload.isNull()) {
+        PLUGIN_ERROR("Json parse error : %s", request.getPayload());
+        errCode = ErrCode_INVALID_REQUEST_PARAMS;
+        goto Done;
+    }
+    mp = it->second;
+    errCode = (self->*mp)(requestPayload, responsePayload);
 
 Done:
     if (ErrCode_NONE != errCode) {
@@ -492,7 +495,6 @@ Done:
         responsePayload.put("errorText", strerror(errCode));
     } else {
         responsePayload.put("returnValue", true);
-        responsePayload.put("config", self->m_configManager.getConfig());
     }
     try {
         request.respond(responsePayload.stringify().c_str());
@@ -500,73 +502,121 @@ Done:
         PLUGIN_ERROR("Failed to respond: %s", e.what());
         return false;
     }
-    PLUGIN_INFO("API-Res(%s) Sender(%s) %s",  request.getKind(), sender, responsePayload.stringify().c_str());
+    PLUGIN_INFO("Kind(%s) Sender(%s) %s",  request.getKind(), sender, responsePayload.stringify().c_str());
     return true;
 }
 
-bool BugreportHandler::onCreateBug(LSHandle *sh, LSMessage *msg, void *ctx)
+ErrCode BugreportHandler::getConfig(JValue& requestPayload, JValue& responsePayload)
 {
-    BugreportHandler* self = (BugreportHandler*)ctx;
-    if (self == NULL) {
-        PLUGIN_ERROR("ctx is null");
-        return false;
-    }
-    Message request(msg);
-    const char* sender = request.getSenderServiceName() != NULL ? request.getSenderServiceName() : request.getApplicationID();
-    PLUGIN_INFO("API-Req(%s) Sender(%s) %s",  request.getKind(), sender, request.getPayload());
+    JValue config = m_configManager.getConfig();
+    config.put("screenshots", m_screenshotManager.toJson());
+    responsePayload.put("config", config);
+    return ErrCode_NONE;
+}
 
-    JValue requestPayload = JDomParser::fromString(request.getPayload());
-    JValue responsePayload = Object();
+ErrCode BugreportHandler::setConfig(JValue& requestPayload, JValue& responsePayload)
+{
+    string username, password;
+    if (!JValueUtil::getValue(requestPayload, "username", username)) {
+        PLUGIN_ERROR("username is required");
+        return ErrCode_INVALID_REQUEST_PARAMS;
+    }
+    if (!JValueUtil::getValue(requestPayload, "password", password)) {
+        PLUGIN_ERROR("password is required");
+        return ErrCode_INVALID_REQUEST_PARAMS;
+    }
+    if (!m_configManager.setConfig(username, password)) {
+        return ErrCode_INTERNAL_ERROR;
+    }
+    return ErrCode_NONE;
+}
+
+ErrCode BugreportHandler::createBug(JValue& requestPayload, JValue& responsePayload)
+{
     ErrCode errCode = ErrCode_NONE;
-    string summary, screenshots, priority, reproducibility;
+    string summary, priority, reproducibility;
+    JValue screenshots = Array();
     string username, password;
     JValue config = Object();
     JValue payload = Object();
     string payloadStr;
     char* buffer;
-    if (requestPayload.isNull()) {
-        errCode = ErrCode_INVALID_REQUEST_PARAMS;
-        goto Done;
-    }
     if (!JValueUtil::getValue(requestPayload, "summary", summary)) {
-        errCode = ErrCode_INVALID_REQUEST_PARAMS;
-        goto Done;
+        PLUGIN_ERROR("summary is required");
+        return ErrCode_INVALID_REQUEST_PARAMS;
     }
     payload.put("summary", summary);
-    if (JValueUtil::getValue(requestPayload, "screenshots", screenshots)) {
-        payload.put("upload-files", screenshots);
-    }
     if (JValueUtil::getValue(requestPayload, "priority", priority)) {
         payload.put("priority", priority);
     }
     if (JValueUtil::getValue(requestPayload, "reproducibility", reproducibility)) {
         payload.put("reproducibility", reproducibility);
     }
-    if (!self->m_configManager.getUsername().empty()) {
-        payload.put("username", self->m_configManager.getUsername());
+    if (JValueUtil::getValue(requestPayload, "screenshots", screenshots) && screenshots.isArray()) {
+        string screenshotStr = "";
+        for (const JValue& screenshot : screenshots.items()) {
+            if (!screenshot.isString())
+                continue;
+            screenshotStr += screenshot.asString() + " ";
+        }
+        if (!screenshotStr.empty()) {
+            payload.put("upload-files", screenshotStr.erase(screenshotStr.length()-1));
+        }
     }
-    if (!self->m_configManager.getPassword().empty()) {
-        payload.put("password", self->m_configManager.getPassword());
+    if (!m_configManager.getUsername().empty()) {
+        payload.put("username", m_configManager.getUsername());
     }
-    if (!self->pushToRpaQueue(payload)) {
-        errCode = ErrCode_INTERNAL_ERROR;
-        goto Done;
+    if (!m_configManager.getPassword().empty()) {
+        payload.put("password", m_configManager.getPassword());
     }
+    if (!pushToRpaQueue(payload)) {
+        PLUGIN_ERROR("Failed in rpa_queue_push");
+        return ErrCode_INTERNAL_ERROR;
+    }
+    return ErrCode_NONE;
+}
 
-Done:
-    if (ErrCode_NONE != errCode) {
-        responsePayload.put("returnValue", false);
-        responsePayload.put("errorCode", errCode);
-        responsePayload.put("errorText", strerror(errCode));
-    } else {
-        responsePayload.put("returnValue", true);
+ErrCode BugreportHandler::processDeprecatedMethod(JValue&, JValue&)
+{
+    return ErrCode_DEPRECATED_METHOD;
+}
+
+ErrCode BugreportHandler::processF9(JValue&, JValue&)
+{
+    PLUGIN_INFO("[CTRL][ALT][F9] Take screenshot");
+    string screenshotFile = m_screenshotManager.takeScreenshot();
+    if (screenshotFile.empty())
+        createToast("Taking screenshot fails!");
+    else
+        createToast(screenshotFile + " captured!");
+    return ErrCode_NONE;
+}
+
+ErrCode BugreportHandler::processF10(JValue&, JValue&)
+{
+    PLUGIN_INFO("[CTRL][ALT][F10] Remove screenshot");
+    m_screenshotManager.removeAll();
+    createToast("Screenshots removed!");
+    return ErrCode_NONE;
+}
+
+ErrCode BugreportHandler::processF11(JValue&, JValue&)
+{
+    PLUGIN_INFO("[CTRL][ALT][F11] Launch bugreport app");
+    launchBugreportApp();
+    return ErrCode_NONE;
+}
+
+ErrCode BugreportHandler::processF12(JValue&, JValue&)
+{
+    PLUGIN_INFO("[CTRL][ALT][F12] Create bug");
+    if (m_screenshotManager.getScreenshots().empty())
+        m_screenshotManager.takeScreenshot();
+    JValue payload = Object();
+    payload.put("summary", m_configManager.generateJiraSummary());
+    payload.put("upload-files", m_screenshotManager.toString());
+    if (!pushToRpaQueue(payload)) {
+        PLUGIN_ERROR("Failed in rpa_queue_push");
     }
-    try {
-        request.respond(responsePayload.stringify().c_str());
-    } catch(exception& e) {
-        PLUGIN_ERROR("Failed to respond: %s", e.what());
-        return false;
-    }
-    PLUGIN_INFO("API-Res(%s) Sender(%s) %s",  request.getKind(), sender, responsePayload.stringify().c_str());
-    return true;
+    return ErrCode_NONE;
 }

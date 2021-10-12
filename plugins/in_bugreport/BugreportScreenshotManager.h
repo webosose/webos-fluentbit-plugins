@@ -38,6 +38,7 @@ public:
     string takeScreenshot();
     void removeAll();
     const list<string> getScreenshots() const;
+    JValue toJson() const;
     string toString() const;
 
 private:

@@ -26,7 +26,7 @@ bool operator <(const timespec& lhs, const timespec& rhs);
 
 class Time {
 public:
-    static std::string getCurrentTime();
+    static std::string getCurrentTime(const char* format = "%Y-%m-%d %H:%M:%S");
     static string generateUid();
     static string toISO8601(struct timespec* ts);
 

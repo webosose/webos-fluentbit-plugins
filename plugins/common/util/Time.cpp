@@ -40,13 +40,13 @@ Time::~Time()
 {
 }
 
-std::string Time::getCurrentTime()
+std::string Time::getCurrentTime(const char* format)
 {
     auto now = std::chrono::system_clock::now();
     auto timenow = std::chrono::system_clock::to_time_t(now);
 
     std::string timeStr(30, '\0');
-    std::strftime(&timeStr[0], timeStr.size(), "%Y-%m-%d %H:%M:%S", std::localtime(&timenow));
+    std::strftime(&timeStr[0], timeStr.size(), format, std::localtime(&timenow));
 
     std::string timeString;
     for (auto it = timeStr.begin(); it != timeStr.end(); ++it) {

@@ -16,6 +16,8 @@
 
 #include "JiraHandler.h"
 
+#include <sstream>
+
 #include "util/File.h"
 #include "util/JValueUtil.h"
 #include "util/Logger.h"
@@ -146,13 +148,9 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
     }
     PLUGIN_INFO("summary : %s", summary.c_str());
 
-    if (!JValueUtil::getValue(object, KEY_UPLOAD_FILES, upload_files)) {
-        PLUGIN_ERROR("failed to get upload-files on (%s)", object.stringify().c_str());
-        FLB_OUTPUT_RETURN(FLB_OK);
-        return;
+    if (JValueUtil::getValue(object, KEY_UPLOAD_FILES, upload_files)) {
+        PLUGIN_INFO("upload-files : %s", upload_files.c_str());
     }
-    PLUGIN_INFO("upload-files : %s", upload_files.c_str());
-
     if (JValueUtil::getValue(object, KEY_USERNAME, username)) {
         PLUGIN_INFO("username : %s", username.c_str());
     }
@@ -175,10 +173,32 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
             + (priority.empty() ? "" : "--priority " + priority + " ")
             + (reproducibility.empty() ? "" : "--reproducibility \'" + reproducibility + "\' ")
             + (isCrashReport ? "--unique-summary --attach-crashcounter " : "")
-            + "--upload-files " + upload_files;
+            + (upload_files.empty() ? "" : "--upload-files " + upload_files);
     PLUGIN_INFO("command : %s", command.c_str());
 
     int ret = system(command.c_str());
-
+    if (ret == -1) {
+        PLUGIN_ERROR("Failed to fork : %s", strerror(errno));
+    } else if (WIFEXITED(ret) && WEXITSTATUS(ret) == 0) {
+        PLUGIN_INFO("Done");
+    } else {
+        PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
+    }
+    // remove upload-files
+    size_t pos = 0;
+    stringstream ss(upload_files);
+    string token;
+    char delimiter = ' ';
+    while (std::getline(ss, token, delimiter)) {
+        if (token.rfind("core.", 0) == 0) {
+            PLUGIN_DEBUG("Do not remove %s", token.c_str());
+            continue;
+        }
+        if (-1 == unlink(token.c_str())) {
+            PLUGIN_WARN("Failed to remove %s : %s", token.c_str(), strerror(errno));
+            continue;
+        }
+        PLUGIN_INFO("Removed %s", token.c_str());
+    }
     FLB_OUTPUT_RETURN(FLB_OK);
 }

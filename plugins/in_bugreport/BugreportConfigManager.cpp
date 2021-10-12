@@ -17,35 +17,55 @@
 #include "BugreportConfigManager.h"
 
 #include "Environment.h"
+#include "util/File.h"
+#include "util/Logger.h"
 #include "util/JValueUtil.h"
+#include "util/Time.h"
+
+const string BugreportConfigManager::DIR_CONFIG = WEBOS_INSTALL_PREFERENCESDIR "/com.webos.service.bugreport";
+const string BugreportConfigManager::FILE_CONFIG_JSON = "config.json";
 
 BugreportConfigManager::BugreportConfigManager()
 {
+    PLUGIN_INFO();
     m_config = Object();
 }
 
 BugreportConfigManager::~BugreportConfigManager()
 {
+    PLUGIN_INFO();
+}
+
+bool BugreportConfigManager::initialize()
+{
+    PLUGIN_INFO();
+
+    if (!File::createDir(DIR_CONFIG)) {
+        PLUGIN_WARN("Failed to mkdir : %s", DIR_CONFIG.c_str());
+        return false;
+    }
+    load();
+    return true;
+}
+
+bool BugreportConfigManager::finalize()
+{
+    PLUGIN_INFO();
+    return true;
 }
 
 JValue BugreportConfigManager::getConfig() const
 {
-    JValue config = m_config.duplicate();
-    // TODO list screenshots..
-    JValue screenshots = Array();
-    screenshots.append("/tmp/capture/screenshot0.jpg");
-    screenshots.append("/tmp/capture/screenshot1.jpg");
-    screenshots.append("/tmp/capture/screenshot2.jpg");
-    config.put("screenshots", screenshots);
-    return config;
+    return m_config.duplicate();
 }
 
 bool BugreportConfigManager::setConfig(const string& username, const string& password)
 {
     // TODO check if username/password can login to jira
-    // TODO save config to db
+    // TODO save encrypted config to db
     m_config.put("username", username);
     m_config.put("password", password);
+    save();
     return true;
 }
 
@@ -69,9 +89,22 @@ string BugreportConfigManager::generateJiraSummary() const
 {
     string foundOn = "[" WEBOS_TARGET_DISTRO "-" WEBOS_TARGET_MACHINE "]";
     string username = getUsername().empty() ? JIRA_DEFAULT_USERNAME : getUsername();
-    auto now = std::chrono::system_clock::now();
-    auto timenow = std::chrono::system_clock::to_time_t(now);
-    char buff[20];
-    std::strftime(buff, sizeof(buff), "%Y%m%d%H%M", std::localtime(&timenow));
-    return foundOn + " " + username + "_" + buff;
+    return foundOn + " " + username + "_" + Time::getCurrentTime("%Y%m%d%H%M");
+}
+
+void BugreportConfigManager::load()
+{
+    PLUGIN_INFO();
+    m_config = JDomParser::fromFile(File::join(DIR_CONFIG, FILE_CONFIG_JSON).c_str());
+    if (m_config.isNull()) {
+        m_config = Object();
+    }
+}
+
+void BugreportConfigManager::save()
+{
+    PLUGIN_DEBUG();
+    if (!File::writeFile(File::join(DIR_CONFIG, FILE_CONFIG_JSON), m_config.stringify("    "))) {
+        PLUGIN_WARN("Failed to write config");
+    }
 }

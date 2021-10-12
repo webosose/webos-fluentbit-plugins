@@ -21,6 +21,7 @@
 #include "util/File.h"
 #include "util/Logger.h"
 #include "util/JValueUtil.h"
+#include "util/Time.h"
 
 #define DIR_SCREENSHOTS     "/tmp/screenshots"
 
@@ -49,6 +50,7 @@ bool BugreportScreenshotManager::initialize(LunaHandle* lunaHandle)
         return false;
     }
     for (string& screenshot : m_screenshots) {
+        screenshot = File::join(DIR_SCREENSHOTS, screenshot);
         PLUGIN_INFO("Screenshot %s", screenshot.c_str());
     }
     return true;
@@ -62,8 +64,15 @@ bool BugreportScreenshotManager::finalize()
 
 string BugreportScreenshotManager::takeScreenshot()
 {
-    string filename = "screenshot" + to_string(m_screenshots.size()) + ".jpg";
+    string prefix = "screenshot_" + Time::getCurrentTime("%Y%m%d%H%M%S");
+    string suffix = ".jpg";
+    string filename = prefix + suffix;
     string filepath = File::join(DIR_SCREENSHOTS, filename);
+    int index = 2;
+    while (access(filepath.c_str(), F_OK) == 0) {
+        filename = prefix + "_" + to_string(index++) + suffix;
+        filepath = File::join(DIR_SCREENSHOTS, filename);
+    }
     JValue requestPayload = Object();
     requestPayload.put("output", filepath);
     requestPayload.put("format", "JPG");
@@ -85,19 +94,18 @@ string BugreportScreenshotManager::takeScreenshot()
         return "";
     }
     PLUGIN_DEBUG("%s", responsePayload.stringify().c_str());
-    m_screenshots.emplace_back(filename);
-    PLUGIN_INFO("Screenshot captured : %s", filename.c_str());
-    return filename;
+    m_screenshots.emplace_back(filepath);
+    PLUGIN_INFO("Screenshot captured : %s", filepath.c_str());
+    return filepath;
 }
 
 void BugreportScreenshotManager::removeAll()
 {
     for (string& screenshot : m_screenshots) {
-        string path = File::join(DIR_SCREENSHOTS, screenshot).c_str();
-        if (0 == unlink(path.c_str())) {
+        if (0 == unlink(screenshot.c_str())) {
             PLUGIN_INFO("Screenshot removed : %s", screenshot.c_str());
         } else {
-            PLUGIN_WARN("Failed to remove %s : %s", path.c_str(), strerror(errno));
+            PLUGIN_WARN("Failed to remove %s : %s", screenshot.c_str(), strerror(errno));
         }
     }
     m_screenshots.clear();
@@ -108,11 +116,20 @@ const list<string> BugreportScreenshotManager::getScreenshots() const
     return m_screenshots;
 }
 
+JValue BugreportScreenshotManager::toJson() const
+{
+    JValue array = Array();
+    for (const string& screenshot : m_screenshots) {
+        array.append(screenshot);
+    }
+    return array;
+}
+
 string BugreportScreenshotManager::toString() const
 {
     string result = "";
     for (const string& screenshot : m_screenshots) {
-        result += File::join(DIR_SCREENSHOTS, screenshot) + " ";
+        result += screenshot + " ";
     }
     if (!result.empty()) {
         result.pop_back();

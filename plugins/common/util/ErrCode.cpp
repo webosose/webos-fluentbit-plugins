@@ -23,10 +23,10 @@ const char* strerror(enum ErrCode errCode)
         return "Success";
     case ErrCode_INTERNAL_ERROR:
         return "Internal error";
+    case ErrCode_DEPRECATED_METHOD:
+        return "Deprecated method";
     case ErrCode_INVALID_REQUEST_PARAMS:
         return "Invalid request params";
-    case ErrCode_LOGIN_FAILURE:
-        return "Login failure";
     }
     return "Undefined error";
 }
