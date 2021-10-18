@@ -477,11 +477,9 @@ bool BugreportHandler::getConfig(LSHandle *sh, LSMessage *msg, void *ctx)
     }
 
     BugreportHandler* self = (BugreportHandler*)ctx;
-    JValue responsePayload = Object();
-    JValue config = self->m_configManager.getConfig();
-    config.put("screenshots", self->m_screenshotManager.toJson());
+    JValue responsePayload = self->m_configManager.getConfig();
+    responsePayload.put("screenshots", self->m_screenshotManager.toJson());
     responsePayload.put("returnValue", true);
-    responsePayload.put("config", config);
     return sendResponse(request, responsePayload.stringify());
 }
 
@@ -654,8 +652,9 @@ ErrCode BugreportHandler::processF11()
 ErrCode BugreportHandler::processF12()
 {
     PLUGIN_INFO("[CTRL][ALT][F12] Create bug");
-    if (m_screenshotManager.getScreenshots().empty())
+    if (m_screenshotManager.getScreenshots().empty()) {
         m_screenshotManager.captureCompositorOutput();
+    }
     JValue payload = Object();
     payload.put("summary", m_configManager.getSummary());
     payload.put("description", m_configManager.getDescription());

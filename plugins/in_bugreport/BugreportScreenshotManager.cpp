@@ -177,7 +177,7 @@ bool BugreportScreenshotManager::loadScreenshots()
     }
     for (string& screenshot : screenshots) {
         screenshot = File::join(DIR_SCREENSHOTS, screenshot);
-        PLUGIN_INFO("Screenshot %s", screenshot.c_str());
+        PLUGIN_DEBUG("Screenshot %s", screenshot.c_str());
     }
     m_screenshots = screenshots;
     return true;

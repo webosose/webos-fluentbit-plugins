@@ -4,21 +4,24 @@ import argparse
 import os
 import json
 import base64
+import shutil
 
 import webos_common as common
 
 from atlassian import Jira
 from webos_common import Crypto
 from webos_common import NYX
+from webos_common import Platform
 from webos_capture import WebOSCapture
 from webos_uploader import WebOSUploader
 
 
 COMPONENT_TEMP = 'Temp'
-DEFAULT_JOURNALD = '/tmp/webos_journald.txt'
-DEFAULT_SYSINFO = '/tmp/webos_info.txt'
-DEFAULT_MESSAGES = '/tmp/webos_messages.tgz'
-DEFAULT_SCREENSHOT = '/tmp/webos_screenshot.jpg'
+DEFAULT_OUTDIR = '/var/spool/jira'
+FILE_JOURNALD = 'messages.txt'
+FILE_SYSINFO = 'info.txt'
+FILE_MESSAGES = 'messages.tgz'
+FILE_SCREENSHOT = 'screenshot.jpg'
 PROJECT_KEY = 'WRN'
 
 
@@ -186,18 +189,17 @@ class WebOSIssue:
 
         comment = "##@@## RDX File Server Links @@##@@\n\n"
         for i, file in enumerate(true_files):
-            desc = "WEB_URL"
-            if file == DEFAULT_JOURNALD:
-                desc = "SYS_LOG"
-            elif file == DEFAULT_SYSINFO:
-                desc = "SYS_INFO"
-            elif file == DEFAULT_MESSAGES:
-                desc = "MESSAGES"
-            elif file == DEFAULT_SCREENSHOT:
-                desc = "SCREENSHOT"
-
             basename = os.path.basename(file)
-            if basename.find('crashreport.txt') > 0:
+            desc = "WEB_URL"
+            if basename == FILE_JOURNALD:
+                desc = "SYS_LOG"
+            elif basename == FILE_SYSINFO:
+                desc = "SYS_INFO"
+            elif basename == FILE_MESSAGES:
+                desc = "MESSAGES"
+            elif basename.startswith('screenshot'):
+                desc = "SCREENSHOT"
+            elif basename.find('crashreport.txt') > 0:
                 desc = "CRASHREPORT"
             elif basename.startswith("core"):
                 desc = "COREDUMP"
@@ -218,6 +220,20 @@ class WebOSIssue:
         components = self._jira.get_project_components(project_key)
         for comp in components:
             print(comp['name'])
+
+    def show_popup(self, message):
+        params = {
+            'message': message,
+            'buttons': [{
+                'label': 'Close',
+                'onclick': 'luna://com.webos.notification/closeAlert',
+                'params': {}
+            }]
+        }
+        command = "luna-send -n 1 -f luna://com.webos.notification/createAlert '{}'".format(json.dumps(params, separators=(',', ':')))
+        common.info(command)
+        result = Platform.instance().execute(command)
+        common.info(result)
 
 
 if __name__ == "__main__":
@@ -243,8 +259,7 @@ if __name__ == "__main__":
     parser.add_argument('--show-devicename',  action='store_true', help='Show all supported devices')
     parser.add_argument('--attach-crashcounter', action='store_true', help='Attach crashcounter in description')
     parser.add_argument('--show-component-registeredin-project', action='store_true', help='Show all components registered in project')
-
-    # parser.add_argument('--enable-popup',     action='store_true', help='Display the result in a pop-up')
+    parser.add_argument('--enable-popup',     action='store_true', help='Display the result in a pop-up')
 
     args = parser.parse_args()
 
@@ -300,6 +315,36 @@ if __name__ == "__main__":
             exit(1)
     elif args.summary is not None:
         # handle 'CREATE' mode
+        outdir = os.path.join(DEFAULT_OUTDIR, '0')
+        if not os.path.isdir(DEFAULT_OUTDIR):
+            os.mkdir(DEFAULT_OUTDIR)
+        subdirs = os.listdir(DEFAULT_OUTDIR)
+        try:
+            if len(subdirs) > 0:
+                subdirs.sort(key=int, reverse=True)
+                outdir = os.path.join(DEFAULT_OUTDIR, str(int(subdirs[0])+1))
+        except Exception as ex:
+            common.warn(str(ex))
+        common.info('Set output dir: {}'.format(outdir))
+        if os.path.exists(outdir):
+            common.warn('Remove out dir: {}'.format(outdir))
+            shutil.rmtree(outdir)
+        os.mkdir(outdir)
+
+        if args.without_sysinfo is False:
+            journal_path = os.path.join(outdir, FILE_JOURNALD)
+            sysinfo_path = os.path.join(outdir, FILE_SYSINFO)
+            messages_path = os.path.join(outdir, FILE_MESSAGES)
+            WebOSCapture.instance().capture_journald(journal_path)
+            WebOSCapture.instance().capture_sysinfo(sysinfo_path)
+            WebOSCapture.instance().capture_messages(messages_path)
+            upload_files.append(journal_path)
+            upload_files.append(sysinfo_path)
+            upload_files.append(messages_path)
+        screenshot_path = os.path.join(outdir, FILE_SCREENSHOT)
+        WebOSCapture.instance().capture_screenshot(screenshot_path)
+        upload_files.append(screenshot_path)
+
         component = None
         if args.component is None:
             component = WebOSIssue.instance().guess_component(args.summary)
@@ -309,23 +354,16 @@ if __name__ == "__main__":
             result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.unique_summary, component)
         except Exception as ex:
             common.error(ex.response.text)
+            if args.enable_popup:
+                WebOSIssue.instance().show_popup('Failed to create ticket : {}'.format(ex.response.status_code))
             raise ex
         if result is None or 'key' not in result:
             common.error("Failed to create new ticket")
             exit(1)
         key = result['key']
         common.info("'{}' is created".format(key))
-
-        if args.without_sysinfo is False:
-            WebOSCapture.instance().capture_journald(DEFAULT_JOURNALD)
-            WebOSCapture.instance().capture_sysinfo(DEFAULT_SYSINFO)
-            WebOSCapture.instance().capture_messages(DEFAULT_MESSAGES)
-
-            upload_files.append(DEFAULT_JOURNALD)
-            upload_files.append(DEFAULT_SYSINFO)
-            upload_files.append(DEFAULT_MESSAGES)
-        WebOSCapture.instance().capture_screenshot(DEFAULT_SCREENSHOT)
-        upload_files.append(DEFAULT_SCREENSHOT)
+        keyfile = open(os.path.join(outdir, key), 'w')
+        keyfile.close()
     else:
         common.info("'key' or 'summary' is needed")
         exit(0)
@@ -339,3 +377,9 @@ if __name__ == "__main__":
     if args.comment is not None:
         WebOSIssue.instance().add_comment(key, args.comment)
 
+    if args.enable_popup and key:
+        WebOSIssue.instance().show_popup('Ticket created : ' + key)
+
+    # delete outdir
+    common.info('Deleting {}'.format(outdir))
+    shutil.rmtree(outdir)

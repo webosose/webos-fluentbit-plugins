@@ -20,6 +20,7 @@
 
 #include "util/File.h"
 #include "util/JValueUtil.h"
+#include "util/MSGPackUtil.h"
 #include "util/Logger.h"
 
 #define KEY_SUMMARY             "summary"
@@ -124,9 +125,10 @@ int JiraHandler::onExit(void *data, struct flb_config *config)
 void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int tag_len, struct flb_input_instance *ins, void *context, struct flb_config *config)
 {
     PLUGIN_INFO();
-
-    flb_sds_t json;
-    JValue object;
+    msgpack_unpacked message;
+    size_t off = 0;
+    struct flb_time timestamp;
+    msgpack_object* payload;
     string summary;
     string description;
     string upload_files;
@@ -137,74 +139,78 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
     string command;
     bool isCrashReport = (string::npos != string(tag, tag_len).find("coredump"));
 
-    json = flb_pack_msgpack_to_json_format((const char*)data, bytes, m_outFormat, m_jsonDateFormat, m_jsonDateKey);
-    PLUGIN_DEBUG("%s", json);
-
-    object = JDomParser::fromString(json);
-    flb_sds_destroy(json);
-
-    if (!JValueUtil::getValue(object, KEY_SUMMARY, summary)) {
-        PLUGIN_ERROR("failed to get summary on (%s)", object.stringify().c_str());
-        FLB_OUTPUT_RETURN(FLB_OK);
-        return;
-    }
-    PLUGIN_INFO("summary : %s", summary.c_str());
-
-    if (JValueUtil::getValue(object, KEY_DESCRIPTION, description)) {
-        PLUGIN_INFO("description : %s", description.c_str());
-    }
-    if (JValueUtil::getValue(object, KEY_UPLOAD_FILES, upload_files)) {
-        PLUGIN_INFO("upload-files : %s", upload_files.c_str());
-    }
-    if (JValueUtil::getValue(object, KEY_USERNAME, username)) {
-        PLUGIN_INFO("username : %s", username.c_str());
-    }
-    if (JValueUtil::getValue(object, KEY_PASSWORD, password)) {
-        PLUGIN_INFO("password : %s", password.c_str());
-    }
-    if (JValueUtil::getValue(object, KEY_PRIORITY, priority)) {
-        PLUGIN_INFO("priority : %s", priority.c_str());
-    }
-    if (JValueUtil::getValue(object, KEY_REPRODUCIBILITY, reproducibility)) {
-        PLUGIN_INFO("reproducibility : %s", reproducibility.c_str());
-    }
-
-    // template : command --summary XXX --unique-summary --upload-files YYY
-    // example  : webos_issue.py --summary "[CRASH][OSE] bootd" --unique-summary --upload-files core.bootd.0.....xz
-
-    command = "webos_issue.py --summary \'" + summary + "\' "
-            + (username.empty() ? "" : "--id " + username + " ")
-            + (password.empty() ? "" : "--pw " + password + " ")
-            + (description.empty() ? "" : "--description \'" + description + "\' ")
-            + (priority.empty() ? "" : "--priority " + priority + " ")
-            + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
-            + (isCrashReport ? "--unique-summary --attach-crashcounter " : "")
-            + (upload_files.empty() ? "" : "--upload-files " + upload_files);
-    PLUGIN_INFO("command : %s", command.c_str());
-
-    int ret = system(command.c_str());
-    if (ret == -1) {
-        PLUGIN_ERROR("Failed to fork : %s", strerror(errno));
-    } else if (WIFEXITED(ret) && WEXITSTATUS(ret) == 0) {
-        PLUGIN_INFO("Done");
-    } else {
-        PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
-    }
-    // remove upload-files
-    size_t pos = 0;
-    stringstream ss(upload_files);
-    string token;
-    char delimiter = ' ';
-    while (std::getline(ss, token, delimiter)) {
-        if (token.rfind("core.", 0) == 0) {
-            PLUGIN_DEBUG("Do not remove %s", token.c_str());
+    msgpack_unpacked_init(&message);
+    while (msgpack_unpack_next(&message, (const char*)data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        PLUGIN_DEBUG("while loop: off=%d, bytes=%d", off, bytes);
+        /* unpack the array of [timestamp, payload] */
+        if (-1 == flb_time_pop_from_msgpack(&timestamp, &message, &payload)) {
+            PLUGIN_ERROR("Failed in flb_time_pop_from_msgpack");
             continue;
         }
-        if (-1 == unlink(token.c_str())) {
-            PLUGIN_WARN("Failed to remove %s : %s", token.c_str(), strerror(errno));
+        if (!MSGPackUtil::getValue(payload, KEY_SUMMARY, summary)) {
+            PLUGIN_ERROR("Failed to get summary");
             continue;
         }
-        PLUGIN_INFO("Removed %s", token.c_str());
+        PLUGIN_INFO("summary : %s", summary.c_str());
+
+        if (MSGPackUtil::getValue(payload, KEY_DESCRIPTION, description)) {
+            PLUGIN_INFO("description : %s", description.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_UPLOAD_FILES, upload_files)) {
+            PLUGIN_INFO("upload-files : %s", upload_files.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_USERNAME, username)) {
+            PLUGIN_INFO("username : %s", username.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_PASSWORD, password)) {
+            PLUGIN_INFO("password : %s", password.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_PRIORITY, priority)) {
+            PLUGIN_INFO("priority : %s", priority.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_REPRODUCIBILITY, reproducibility)) {
+            PLUGIN_INFO("reproducibility : %s", reproducibility.c_str());
+        }
+
+        // template : command --summary XXX --unique-summary --upload-files YYY
+        // example  : webos_issue.py --summary "[CRASH][OSE] bootd" --unique-summary --upload-files core.bootd.0.....xz
+
+        command = "webos_issue.py --summary \'" + summary + "\' "
+                + (username.empty() ? "" : "--id " + username + " ")
+                + (password.empty() ? "" : "--pw " + password + " ")
+                + (description.empty() ? "" : "--description \'" + description + "\' ")
+                + (priority.empty() ? "" : "--priority " + priority + " ")
+                + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
+                + (isCrashReport ? "--unique-summary --attach-crashcounter " : "--enable-popup ")
+                + (upload_files.empty() ? "" : "--upload-files " + upload_files);
+        PLUGIN_INFO("command : %s", command.c_str());
+
+        int ret = system(command.c_str());
+        if (ret == -1) {
+            PLUGIN_ERROR("Failed to fork : %s", strerror(errno));
+        } else if (WIFEXITED(ret) && WEXITSTATUS(ret) == 0) {
+            PLUGIN_INFO("Done");
+        } else {
+            PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
+        }
+        // remove upload-files except core.XXXX.xz
+        // TODO remove all file or uploaded file ?
+        size_t pos = 0;
+        stringstream ss(upload_files);
+        string token;
+        char delimiter = ' ';
+        while (std::getline(ss, token, delimiter)) {
+            if (token.rfind("core.", 0) == 0) {
+                PLUGIN_DEBUG("Do not remove %s", token.c_str());
+                continue;
+            }
+            if (-1 == unlink(token.c_str())) {
+                PLUGIN_WARN("Failed to remove %s : %s", token.c_str(), strerror(errno));
+                continue;
+            }
+            PLUGIN_INFO("Removed %s", token.c_str());
+        }
     }
+    msgpack_unpacked_destroy(&message);
     FLB_OUTPUT_RETURN(FLB_OK);
 }

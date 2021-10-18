@@ -96,6 +96,9 @@ def info(message, force=False):
     if get_value('developer', 'info'):
         log('INFO', message)
 
+def warn(message):
+    log('WARN', message)
+
 def error(message):
     log('ERROR', message)
 
