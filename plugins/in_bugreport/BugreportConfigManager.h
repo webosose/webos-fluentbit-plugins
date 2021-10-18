@@ -37,7 +37,7 @@ public:
     bool initialize();
     bool finalize();
 
-    JValue getConfig() const;
+    JValue getConfig();
     bool setConfig(const string& username, const string& password);
 
     string getUsername() const;
@@ -45,12 +45,6 @@ public:
     string generateJiraSummary() const;
 
 private:
-    void load();
-    void save();
-
-    static const string DIR_CONFIG;
-    static const string FILE_CONFIG_JSON;
-
     JValue m_config;
 };
 

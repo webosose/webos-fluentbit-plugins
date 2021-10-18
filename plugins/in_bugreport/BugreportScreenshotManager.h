@@ -19,6 +19,8 @@
 
 #include <list>
 #include <string>
+#include <gio/gio.h>
+#include <glib.h>
 
 #include "FluentBit.h"
 #include "bus/LunaHandle.h"
@@ -42,8 +44,16 @@ public:
     string toString() const;
 
 private:
+    static void onDirChanged(GFileMonitor *monitor, GFile *file, GFile *other_file, GFileMonitorEvent event, gpointer user_data);
+
+    bool loadScreenshots();
+
     LunaHandle* m_lunaHandle;
     list<string> m_screenshots;
+
+    GFile* m_dir;
+    GFileMonitor* m_dirMonitor;
+    int m_dirMonitorId;
 };
 
 #endif

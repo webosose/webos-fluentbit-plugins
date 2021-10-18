@@ -22,9 +22,6 @@
 #include "util/JValueUtil.h"
 #include "util/Time.h"
 
-const string BugreportConfigManager::DIR_CONFIG = WEBOS_INSTALL_PREFERENCESDIR "/com.webos.service.bugreport";
-const string BugreportConfigManager::FILE_CONFIG_JSON = "config.json";
-
 BugreportConfigManager::BugreportConfigManager()
 {
     PLUGIN_INFO();
@@ -39,12 +36,7 @@ BugreportConfigManager::~BugreportConfigManager()
 bool BugreportConfigManager::initialize()
 {
     PLUGIN_INFO();
-
-    if (!File::createDir(DIR_CONFIG)) {
-        PLUGIN_WARN("Failed to mkdir : %s", DIR_CONFIG.c_str());
-        return false;
-    }
-    load();
+    m_config = getConfig();
     return true;
 }
 
@@ -54,18 +46,42 @@ bool BugreportConfigManager::finalize()
     return true;
 }
 
-JValue BugreportConfigManager::getConfig() const
+JValue BugreportConfigManager::getConfig()
 {
+    // we can return m_config, but the owner that manages jira password is webos_issue.py script,
+    // so run py script again.
+    string command = "webos_issue.py --show-id";
+    PLUGIN_DEBUG("command : %s", command.c_str());
+    FILE *fp = popen(command.c_str(), "r");
+    if (fp == NULL) {
+        PLUGIN_ERROR("Failed to popen : %s", command.c_str());
+        return m_config.duplicate();
+    }
+    char username[64];
+    char password[64];
+    fscanf(fp, "ID : %s\n", username);
+    fscanf(fp, "PW : %s\n", password);
+    PLUGIN_DEBUG("id (%s), pw (%s)", username, password);
+    m_config.put("username", username);
+    m_config.put("password", password);
+    pclose(fp);
     return m_config.duplicate();
 }
 
-bool BugreportConfigManager::setConfig(const string& username, const string& password)
+bool BugreportConfigManager::setConfig(const string& username, const string& b64encodedPassword)
 {
     // TODO check if username/password can login to jira
-    // TODO save encrypted config to db
-    m_config.put("username", username);
-    m_config.put("password", password);
-    save();
+    string command = "webos_issue.py --id " + username + " --pw " + b64encodedPassword;
+    PLUGIN_DEBUG("command : %s", command.c_str());
+    int ret = system(command.c_str());
+    if (ret == -1) {
+        PLUGIN_ERROR("Failed to fork : %s", strerror(errno));
+        return false;
+    }
+    if (!WIFEXITED(ret) || WEXITSTATUS(ret) != 0) {
+        PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
+        return false;
+    }
     return true;
 }
 
@@ -90,21 +106,4 @@ string BugreportConfigManager::generateJiraSummary() const
     string foundOn = "[" WEBOS_TARGET_DISTRO "-" WEBOS_TARGET_MACHINE "]";
     string username = getUsername().empty() ? JIRA_DEFAULT_USERNAME : getUsername();
     return foundOn + " " + username + "_" + Time::getCurrentTime("%Y%m%d%H%M");
-}
-
-void BugreportConfigManager::load()
-{
-    PLUGIN_INFO();
-    m_config = JDomParser::fromFile(File::join(DIR_CONFIG, FILE_CONFIG_JSON).c_str());
-    if (m_config.isNull()) {
-        m_config = Object();
-    }
-}
-
-void BugreportConfigManager::save()
-{
-    PLUGIN_DEBUG();
-    if (!File::writeFile(File::join(DIR_CONFIG, FILE_CONFIG_JSON), m_config.stringify("    "))) {
-        PLUGIN_WARN("Failed to write config");
-    }
 }

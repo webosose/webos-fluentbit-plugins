@@ -27,6 +27,9 @@
 
 BugreportScreenshotManager::BugreportScreenshotManager()
     : m_lunaHandle(NULL)
+    , m_dir(NULL)
+    , m_dirMonitor(NULL)
+    , m_dirMonitorId(0)
 {
     PLUGIN_INFO();
 }
@@ -41,24 +44,33 @@ bool BugreportScreenshotManager::initialize(LunaHandle* lunaHandle)
     PLUGIN_INFO("Screenshot dir : %s", DIR_SCREENSHOTS);
     m_lunaHandle = lunaHandle;
 
-    if (!File::createDir(DIR_SCREENSHOTS)) {
-        PLUGIN_ERROR("Failed to create dir : %s", DIR_SCREENSHOTS);
+    if (!loadScreenshots()) {
         return false;
     }
-    if (!File::listFiles(DIR_SCREENSHOTS, m_screenshots)) {
-        PLUGIN_ERROR("Failed to read dir : %s", DIR_SCREENSHOTS);
+    GError* error = NULL;
+    m_dir = g_file_new_for_path(DIR_SCREENSHOTS);
+    if (NULL == (m_dirMonitor = g_file_monitor(m_dir, G_FILE_MONITOR_NONE, NULL, &error))) {
+        g_object_unref(m_dir);
+        PLUGIN_ERROR("Failed in g_file_monitor : %s", error->message);
+        g_error_free(error);
         return false;
     }
-    for (string& screenshot : m_screenshots) {
-        screenshot = File::join(DIR_SCREENSHOTS, screenshot);
-        PLUGIN_INFO("Screenshot %s", screenshot.c_str());
-    }
+    m_dirMonitorId = g_signal_connect(m_dirMonitor,
+                                      "changed",
+                                      G_CALLBACK(BugreportScreenshotManager::onDirChanged),
+                                      this);
     return true;
 }
 
 bool BugreportScreenshotManager::finalize()
 {
     PLUGIN_INFO();
+    if (0 != m_dirMonitorId)
+        g_signal_handler_disconnect(m_dirMonitor, m_dirMonitorId);
+    if (NULL != m_dirMonitor)
+        g_object_unref(m_dirMonitor);
+    if (NULL != m_dir)
+        g_object_unref(m_dir);
     return true;
 }
 
@@ -135,4 +147,39 @@ string BugreportScreenshotManager::toString() const
         result.pop_back();
     }
     return result;
+}
+
+void BugreportScreenshotManager::onDirChanged(GFileMonitor *monitor,
+                                              GFile *file,
+                                              GFile *other_file,
+                                              GFileMonitorEvent event,
+                                              gpointer user_data)
+{
+    BugreportScreenshotManager* self = (BugreportScreenshotManager*)user_data;
+    if (self == NULL) {
+        PLUGIN_ERROR("user_data is null");
+        return;
+    }
+    PLUGIN_INFO();
+    (void)self->loadScreenshots();
+}
+
+bool BugreportScreenshotManager::loadScreenshots()
+{
+    PLUGIN_INFO();
+    list<string> screenshots;
+    if (!File::createDir(DIR_SCREENSHOTS)) {
+        PLUGIN_ERROR("Failed to create dir : %s", DIR_SCREENSHOTS);
+        return false;
+    }
+    if (!File::listFiles(DIR_SCREENSHOTS, screenshots)) {
+        PLUGIN_ERROR("Failed to read dir : %s", DIR_SCREENSHOTS);
+        return false;
+    }
+    for (string& screenshot : screenshots) {
+        screenshot = File::join(DIR_SCREENSHOTS, screenshot);
+        PLUGIN_INFO("Screenshot %s", screenshot.c_str());
+    }
+    m_screenshots = screenshots;
+    return true;
 }

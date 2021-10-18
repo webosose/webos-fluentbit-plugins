@@ -3,10 +3,12 @@
 import argparse
 import os
 import json
+import base64
 
 import webos_common as common
 
 from atlassian import Jira
+from webos_common import Crypto
 from webos_common import NYX
 from webos_capture import WebOSCapture
 from webos_uploader import WebOSUploader
@@ -34,10 +36,11 @@ class WebOSIssue:
         return cls._instance
 
     def __init__(self):
+        pw = Crypto.instance().decrypt(common.get_value('account', 'pw'))
         self._jira = Jira(
             url=common.get_value('jira', 'url'),
             username=common.get_value('account', 'id'),
-            password=common.get_value('account', 'pw'))
+            password=pw)
         return
 
     def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, unique_summary=False, component=COMPONENT_TEMP):
@@ -249,6 +252,7 @@ if __name__ == "__main__":
     if args.show_id:
         id = common.get_value('account', 'id')
         pw = common.get_value('account', 'pw')
+        pw = Crypto.instance().b64encode(Crypto.instance().decrypt(pw))
         print('ID : {}'.format(id))
         print('PW : {}'.format(pw))
         exit(1)
@@ -266,8 +270,9 @@ if __name__ == "__main__":
     # handle 'id' and 'pw' first
     if args.id is not None or args.pw is not None:
         if args.id is not None and args.pw is not None:
+            pw = Crypto.instance().encrypt(Crypto.instance().b64decode(args.pw))
             common.set_value('account', 'id', args.id)
-            common.set_value('account', 'pw', args.pw)
+            common.set_value('account', 'pw', pw)
         else:
             common.error("'id' and 'pw' are needed")
             exit(1)
@@ -323,7 +328,7 @@ if __name__ == "__main__":
         upload_files.append(DEFAULT_SCREENSHOT)
     else:
         common.info("'key' or 'summary' is needed")
-        exit(1)
+        exit(0)
 
     # handle 'attach-files'
     WebOSIssue.instance().attach_files(key, args.attach_files)

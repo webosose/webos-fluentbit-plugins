@@ -516,16 +516,16 @@ ErrCode BugreportHandler::getConfig(JValue& requestPayload, JValue& responsePayl
 
 ErrCode BugreportHandler::setConfig(JValue& requestPayload, JValue& responsePayload)
 {
-    string username, password;
+    string username, b64encodedPassword;
     if (!JValueUtil::getValue(requestPayload, "username", username)) {
         PLUGIN_ERROR("username is required");
         return ErrCode_INVALID_REQUEST_PARAMS;
     }
-    if (!JValueUtil::getValue(requestPayload, "password", password)) {
+    if (!JValueUtil::getValue(requestPayload, "password", b64encodedPassword)) {
         PLUGIN_ERROR("password is required");
         return ErrCode_INVALID_REQUEST_PARAMS;
     }
-    if (!m_configManager.setConfig(username, password)) {
+    if (!m_configManager.setConfig(username, b64encodedPassword)) {
         return ErrCode_INTERNAL_ERROR;
     }
     return ErrCode_NONE;

@@ -3,8 +3,11 @@
 import subprocess
 import datetime
 import json
+import base64
+import hashlib
 
 from sys import stdout
+from cryptography.fernet import Fernet
 
 
 ####### CONFIG #######
@@ -210,3 +213,33 @@ class Platform:
         except:
             result = 'Failed to read the file'
         return result
+
+
+class Crypto:
+    _instance = None
+
+    @classmethod
+    def _getInstance(cls):
+        return cls._instance
+
+    @classmethod
+    def instance(cls, *args, **kargs):
+        cls._instance = cls(*args, **kargs)
+        cls.instance = cls._getInstance
+        return cls._instance
+
+    def __init__(self):
+        self.f = Fernet(base64.urlsafe_b64encode(hashlib.sha256(b'rdx_credential').digest()))
+
+    def encrypt(self, plaintext):
+        return self.f.encrypt(plaintext.encode()).decode()
+
+    def decrypt(self, ciphertext):
+        return self.f.decrypt(ciphertext.encode()).decode()
+
+    def b64encode(self, str):
+        return base64.b64encode(str.encode()).decode()
+
+    def b64decode(self, str):
+        return base64.b64decode(str.encode()).decode()
+

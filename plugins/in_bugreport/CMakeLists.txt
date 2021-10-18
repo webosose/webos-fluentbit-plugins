@@ -16,6 +16,12 @@
 #
 # LICENSE@@@
 
+include(FindPkgConfig)
+
+pkg_check_modules(GIO2 REQUIRED gio-2.0)
+include_directories(${GIO2_INCLUDE_DIRS})
+# webos_add_compiler_flags(ALL ${GIO2_CFLAGS_OTHER})
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 file(GLOB_RECURSE SRC_C ${CMAKE_CURRENT_SOURCE_DIR}/*.c)
@@ -26,4 +32,8 @@ set(SRC
     ${SRC_CPP}
 )
 
-FLB_PLUGIN(in_bugreport "${SRC}" "")
+set(LIB
+    ${GIO2_LDFLAGS}
+)
+
+FLB_PLUGIN(in_bugreport "${SRC}" "${LIB}")
