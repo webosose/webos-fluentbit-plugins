@@ -71,30 +71,30 @@ extern "C" int collectBugreport(struct flb_input_instance *ins, struct flb_confi
 }
 
 const LSMethod BugreportHandler::METHOD_TABLE[] = {
-    { "getConfig",               BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "setConfig",               BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "createBug",               BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "disableCrashPopup",       BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "disableCrashReporting",   BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "doHeadlessBugReport",     BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "enableCrashPopup",        BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "enableCrashReporting",    BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "fileBugReport",           BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "fileCrashReport",         BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "getBuildMaxAge",          BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "getBugReportingConfig",   BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "getCrashReportingJira",   BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "isCrashPopupEnabled",     BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "isCrashReportingEnabled", BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "prepareBugReport",        BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "removeCredential",        BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "resetScreenshots",        BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "setBuildMaxAge",          BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "setCrashReportingJira",   BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "signInToJira",            BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "signOutFromJira",         BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "storeCredential",         BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
-    { "takeScreenshot",          BugreportHandler::onProcessMethod, LUNA_METHOD_FLAGS_NONE },
+    { "getConfig",               BugreportHandler::getConfig, LUNA_METHOD_FLAGS_NONE },
+    { "setConfig",               BugreportHandler::setConfig, LUNA_METHOD_FLAGS_NONE },
+    { "createBug",               BugreportHandler::createBug, LUNA_METHOD_FLAGS_NONE },
+    { "disableCrashPopup",       BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "disableCrashReporting",   BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "doHeadlessBugReport",     BugreportHandler::doHeadlessBugReport, LUNA_METHOD_FLAGS_NONE },
+    { "enableCrashPopup",        BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "enableCrashReporting",    BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "fileBugReport",           BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "fileCrashReport",         BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "getBuildMaxAge",          BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "getBugReportingConfig",   BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "getCrashReportingJira",   BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "isCrashPopupEnabled",     BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "isCrashReportingEnabled", BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "prepareBugReport",        BugreportHandler::prepareBugReport, LUNA_METHOD_FLAGS_NONE },
+    { "removeCredential",        BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "resetScreenshots",        BugreportHandler::resetScreenshots, LUNA_METHOD_FLAGS_NONE },
+    { "setBuildMaxAge",          BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "setCrashReportingJira",   BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "signInToJira",            BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "signOutFromJira",         BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "storeCredential",         BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
+    { "takeScreenshot",          BugreportHandler::takeScreenshot, LUNA_METHOD_FLAGS_NONE },
     { nullptr, nullptr }
 };
 
@@ -104,7 +104,6 @@ BugreportHandler::BugreportHandler()
     : LunaHandle("com.webos.service.bugreport")
     , m_inputInstance(NULL)
     , m_queue(NULL)
-    , m_deviceListSubscriptionToken(LSMESSAGE_TOKEN_INVALID)
     , m_keyboardFd(-1)
     , m_isAltPressed(false)
     , m_isCtrlPressed(false)
@@ -198,27 +197,24 @@ int BugreportHandler::onCollect(struct flb_input_instance *ins, struct flb_confi
 
 bool BugreportHandler::onRegisterServerStatus(bool isConnected)
 {
+    static string method = "luna://com.webos.service.pdm/getAttachedNonStorageDeviceList";
     PLUGIN_INFO("%s", isConnected ? "UP" : "DOWN");
     if (isConnected) {
-        LSErrorSafe lserror;
-        if (!LSCall(LunaHandle::get(), "luna://com.webos.service.pdm/getAttachedNonStorageDeviceList", "{\"subscribe\":true}",
-                (LSFilterFunc)BugreportHandler::onDeviceListChanged, this, &m_deviceListSubscriptionToken, &lserror)) {
-            PLUGIN_ERROR("Failed in LSCall (%d) %s", lserror.error_code, lserror.message);
-        }
-        return true;
-    }
-    if (LSMESSAGE_TOKEN_INVALID == m_deviceListSubscriptionToken) {
-        return true;
-    }
-    LSErrorSafe lserror;
-    if (!LSCallCancel(LunaHandle::get(), m_deviceListSubscriptionToken, &lserror)) {
-        PLUGIN_WARN("Failed in LSCallCancel (%d) %s", lserror.error_code, lserror.message);
-        return true;
+        JValue requestPayload = Object();
+        requestPayload.put("subscribe", true);
+        m_getAttachedNonStorageDeviceListCall = callMultiReply(
+                method.c_str(),
+                requestPayload.stringify().c_str(),
+                BugreportHandler::onGetAttachedNonStorageDeviceList,
+                this
+        );
+    } else {
+        m_getAttachedNonStorageDeviceListCall.cancel();
     }
     return true;
 }
 
-bool BugreportHandler::onDeviceListChanged(LSHandle *sh, LSMessage *message, void *ctx)
+bool BugreportHandler::onGetAttachedNonStorageDeviceList(LSHandle *sh, LSMessage *message, void *ctx)
 {
     PLUGIN_INFO();
     BugreportHandler* self = (BugreportHandler*)ctx;
@@ -259,37 +255,45 @@ int BugreportHandler::findKeyboardFd()
             PLUGIN_DEBUG("%s is not a vaild device.", device.c_str());
             continue;
         }
-        ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-        ioctl(fd, EVIOCGPHYS(sizeof(phys)), phys);
-        PLUGIN_DEBUG("Check input device : %s (%s, %s)", device.c_str(), name, phys);
-        if (strncmp(phys, "usb-", 4) == 0) {
-            unsigned long evbit[NBITS(EV_CNT)];
-            if (ioctl(fd, EVIOCGBIT(0, sizeof(evbit)), evbit) >= 0) {
-                /* USB keyboard's EV is always 120013 (0000 0000 0001 0010 0000 0000 0001 0011)
-                 * It might be ok to check the 17th and 20th bit because any other devices might not set both bits.
-                 * But for safety, this code checks bits (0, 1, 2, 3, 4, 17, 20).
-                 */
-                if (IS_BIT_SET(EV_SYN, evbit) && // bit 0
-                        IS_BIT_SET(EV_KEY, evbit) && // bit 1
-                        !IS_BIT_SET(EV_REL, evbit) && // bit 2
-                        !IS_BIT_SET(EV_ABS, evbit) && // bit 3
-                        IS_BIT_SET(EV_MSC, evbit) && // bit 4
-                        IS_BIT_SET(17, evbit) && // bit 17
-                        IS_BIT_SET(20, evbit))   // bit 20
-                {
-                    PLUGIN_DEBUG("Found a keyboard %s:%s:%p", device.c_str(), name, evbit);
-                    return fd;
-                }
-                PLUGIN_WARN("Unknown evbit : name (%s), phys (%s), bits (%d%d%d%d%d%d%d)", name, phys,
-                        IS_BIT_SET(EV_SYN, evbit), IS_BIT_SET(EV_KEY, evbit), IS_BIT_SET(EV_REL, evbit), IS_BIT_SET(EV_ABS, evbit),
-                        IS_BIT_SET(EV_MSC, evbit), IS_BIT_SET(17, evbit), IS_BIT_SET(20, evbit));
-            } else {
-                PLUGIN_ERROR("Error in ioctl (%d) %s", errno, strerror(errno));
-            }
+        if (ioctl(fd, EVIOCGNAME(sizeof(name)), name) == -1) {
+            PLUGIN_DEBUG("Error in ioctl EVIOCGNAME (%d) %s", errno, strerror(errno));
+            close(fd);
+            continue;
         }
-        /* reinitialize for the next iteration */
-        name[0] = '\0';
-        phys[0] = '\0';
+        if (ioctl(fd, EVIOCGPHYS(sizeof(phys)), phys) == -1) {
+            PLUGIN_DEBUG("Error in ioctl EVIOCGPHYS (%d) %s", errno, strerror(errno));
+            close(fd);
+            continue;
+        }
+        PLUGIN_DEBUG("Check input device : %s (%s, %s)", device.c_str(), name, phys);
+        if (strncmp(phys, "usb-", 4) != 0) {
+            close(fd);
+            continue;
+        }
+        unsigned long evbit[NBITS(EV_CNT)];
+        if (ioctl(fd, EVIOCGBIT(0, sizeof(evbit)), evbit) == -1) {
+            PLUGIN_ERROR("Error in ioctl EVIOCGBIT (%d) %s", errno, strerror(errno));
+            close(fd);
+            continue;
+        }
+        /* USB keyboard's EV is always 120013 (0000 0000 0001 0010 0000 0000 0001 0011)
+         * It might be ok to check the 17th and 20th bit because any other devices might not set both bits.
+         * But for safety, this code checks bits (0, 1, 2, 3, 4, 17, 20).
+         */
+        if (IS_BIT_SET(EV_SYN, evbit) && // bit 0
+                IS_BIT_SET(EV_KEY, evbit) && // bit 1
+                !IS_BIT_SET(EV_REL, evbit) && // bit 2
+                !IS_BIT_SET(EV_ABS, evbit) && // bit 3
+                IS_BIT_SET(EV_MSC, evbit) && // bit 4
+                IS_BIT_SET(17, evbit) && // bit 17
+                IS_BIT_SET(20, evbit))   // bit 20
+        {
+            PLUGIN_INFO("Found a keyboard %s:%s:%p", device.c_str(), name, evbit);
+            return fd;
+        }
+        PLUGIN_WARN("Unknown evbit : name (%s), phys (%s), bits (%d%d%d%d%d%d%d)", name, phys,
+                IS_BIT_SET(EV_SYN, evbit), IS_BIT_SET(EV_KEY, evbit), IS_BIT_SET(EV_REL, evbit), IS_BIT_SET(EV_ABS, evbit),
+                IS_BIT_SET(EV_MSC, evbit), IS_BIT_SET(17, evbit), IS_BIT_SET(20, evbit));
         close(fd);
     }
     return -1;
@@ -327,45 +331,33 @@ gboolean BugreportHandler::onKeyboardEvent(GIOChannel *channel, GIOCondition con
         // PLUGIN_DEBUG("Received key code %d(%s)", ev[1].code, ev[1].value == 1 ? "DOWN" : "UP");
         switch (ev[1].code) {
             case KEYCODE_LEFT_CTRL:
-            {
                 self->m_isCtrlPressed = (ev[1].value == 1) ? true : false;
                 PLUGIN_DEBUG("CTRL %s", (self->m_isCtrlPressed) ? "DOWN" : "UP");
                 break;
-            }
             case KEYCODE_LEFT_ALT:
-            {
                 self->m_isAltPressed = (ev[1].value == 1) ? true : false;
                 PLUGIN_DEBUG("ALT %s", (self->m_isAltPressed) ? "DOWN" : "UP");
                 break;
-            }
             case KEYCODE_F9:
-            {
                 if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
                     break;
                 self->processF9();
                 break;
-            }
             case KEYCODE_F10:
-            {
                 if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
                     break;
                 self->processF10();
                 break;
-            }
             case KEYCODE_F11:
-            {
                 if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
                     break;
                 self->processF11();
                 break;
-            }
             case KEYCODE_F12:
-            {
                 if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
                     break;
                 self->processF12();
                 break;
-            }
             default:
                 break;
         }
@@ -433,62 +425,26 @@ bool BugreportHandler::pushToRpaQueue(JValue payload)
     return rpa_queue_push(m_queue, (void*)buffer);
 }
 
-bool BugreportHandler::onProcessMethod(LSHandle *sh, LSMessage *msg, void *ctx)
+ErrCode BugreportHandler::parseRequest(Message& request, JValue& requestPayload, void* ctx)
 {
-    typedef ErrCode (BugreportHandler::*MethodProcessor)(JValue&, JValue&);
-    static map<string, MethodProcessor> methods = {
-            { "/getConfig",               &BugreportHandler::getConfig },
-            { "/setConfig",               &BugreportHandler::setConfig },
-            { "/createBug",               &BugreportHandler::createBug },
-            { "/disableCrashPopup",       &BugreportHandler::processDeprecatedMethod },
-            { "/disableCrashReporting",   &BugreportHandler::processDeprecatedMethod },
-            { "/doHeadlessBugReport",     &BugreportHandler::processF12 },
-            { "/enableCrashPopup",        &BugreportHandler::processDeprecatedMethod },
-            { "/enableCrashReporting",    &BugreportHandler::processDeprecatedMethod },
-            { "/fileBugReport",           &BugreportHandler::createBug },
-            { "/fileCrashReport",         &BugreportHandler::processDeprecatedMethod },
-            { "/getBuildMaxAge",          &BugreportHandler::processDeprecatedMethod },
-            { "/getBugReportingConfig",   &BugreportHandler::processDeprecatedMethod },
-            { "/getCrashReportingJira",   &BugreportHandler::processDeprecatedMethod },
-            { "/isCrashPopupEnabled",     &BugreportHandler::processDeprecatedMethod },
-            { "/isCrashReportingEnabled", &BugreportHandler::processDeprecatedMethod },
-            { "/prepareBugReport",        &BugreportHandler::processF11 },
-            { "/removeCredential",        &BugreportHandler::processDeprecatedMethod },
-            { "/resetScreenshots",        &BugreportHandler::processF10 },
-            { "/setBuildMaxAge",          &BugreportHandler::processDeprecatedMethod },
-            { "/setCrashReportingJira",   &BugreportHandler::processDeprecatedMethod },
-            { "/signInToJira",            &BugreportHandler::setConfig },
-            { "/signOutFromJira",         &BugreportHandler::processDeprecatedMethod },
-            { "/storeCredential",         &BugreportHandler::setConfig },
-            { "/takeScreenshot",          &BugreportHandler::processF9 },
-    };
     BugreportHandler* self = (BugreportHandler*)ctx;
     if (self == NULL) {
         PLUGIN_ERROR("ctx is null");
-        return false;
+        return ErrCode_INTERNAL_ERROR;
     }
-    Message request(msg);
     const char* sender = request.getSenderServiceName() != NULL ? request.getSenderServiceName() : request.getApplicationID();
     PLUGIN_INFO("Kind(%s) Sender(%s) %s",  request.getKind(), sender, request.getPayload());
-    JValue requestPayload = JDomParser::fromString(request.getPayload());
-    JValue responsePayload = Object();
-    ErrCode errCode = ErrCode_NONE;
-    MethodProcessor mp;
-    auto it = methods.find(request.getKind());
-    if (it == methods.end()) {
-        PLUGIN_ERROR("Method not found : %s", request.getKind());
-        errCode = ErrCode_INTERNAL_ERROR;
-        goto Done;
-    }
+    requestPayload = JDomParser::fromString(request.getPayload());
     if (requestPayload.isNull()) {
         PLUGIN_ERROR("Json parse error : %s", request.getPayload());
-        errCode = ErrCode_INVALID_REQUEST_PARAMS;
-        goto Done;
+        return ErrCode_INVALID_REQUEST_PARAMS;
     }
-    mp = it->second;
-    errCode = (self->*mp)(requestPayload, responsePayload);
+    return ErrCode_NONE;
+}
 
-Done:
+bool BugreportHandler::sendResponse(Message& request, ErrCode errCode)
+{
+    JValue responsePayload = Object();
     if (ErrCode_NONE != errCode) {
         responsePayload.put("returnValue", false);
         responsePayload.put("errorCode", errCode);
@@ -496,45 +452,75 @@ Done:
     } else {
         responsePayload.put("returnValue", true);
     }
+    return sendResponse(request, responsePayload.stringify());
+}
+
+bool BugreportHandler::sendResponse(Message& request, const string& responsePayload)
+{
     try {
-        request.respond(responsePayload.stringify().c_str());
+        request.respond(responsePayload.c_str());
     } catch(exception& e) {
         PLUGIN_ERROR("Failed to respond: %s", e.what());
         return false;
     }
-    PLUGIN_INFO("Kind(%s) Sender(%s) %s",  request.getKind(), sender, responsePayload.stringify().c_str());
+    PLUGIN_INFO("Kind(%s) %s",  request.getKind(), responsePayload.c_str());
     return true;
 }
 
-ErrCode BugreportHandler::getConfig(JValue& requestPayload, JValue& responsePayload)
+bool BugreportHandler::getConfig(LSHandle *sh, LSMessage *msg, void *ctx)
 {
-    JValue config = m_configManager.getConfig();
-    config.put("screenshots", m_screenshotManager.toJson());
+    ErrCode errCode = ErrCode_NONE;
+    Message request(msg);
+    JValue requestPayload = Object();
+    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
+        return sendResponse(request, errCode);
+    }
+
+    BugreportHandler* self = (BugreportHandler*)ctx;
+    JValue responsePayload = Object();
+    JValue config = self->m_configManager.getConfig();
+    config.put("screenshots", self->m_screenshotManager.toJson());
+    responsePayload.put("returnValue", true);
     responsePayload.put("config", config);
-    return ErrCode_NONE;
+    return sendResponse(request, responsePayload.stringify());
 }
 
-ErrCode BugreportHandler::setConfig(JValue& requestPayload, JValue& responsePayload)
+bool BugreportHandler::setConfig(LSHandle *sh, LSMessage *msg, void *ctx)
 {
+    ErrCode errCode = ErrCode_NONE;
+    Message request(msg);
+    JValue requestPayload = Object();
+    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
+        return sendResponse(request, errCode);
+    }
+
+    BugreportHandler* self = (BugreportHandler*)ctx;
     string username, b64encodedPassword;
     if (!JValueUtil::getValue(requestPayload, "username", username)) {
         PLUGIN_ERROR("username is required");
-        return ErrCode_INVALID_REQUEST_PARAMS;
+        return sendResponse(request, ErrCode_INVALID_REQUEST_PARAMS);
     }
     if (!JValueUtil::getValue(requestPayload, "password", b64encodedPassword)) {
         PLUGIN_ERROR("password is required");
-        return ErrCode_INVALID_REQUEST_PARAMS;
+        return sendResponse(request, ErrCode_INVALID_REQUEST_PARAMS);
     }
-    if (!m_configManager.setConfig(username, b64encodedPassword)) {
-        return ErrCode_INTERNAL_ERROR;
+    if (!self->m_configManager.setConfig(username, b64encodedPassword)) {
+        return sendResponse(request, ErrCode_INTERNAL_ERROR);
     }
-    return ErrCode_NONE;
+    return sendResponse(request, ErrCode_NONE);
 }
 
-ErrCode BugreportHandler::createBug(JValue& requestPayload, JValue& responsePayload)
+bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
 {
     ErrCode errCode = ErrCode_NONE;
-    string summary, priority, reproducibility;
+    Message request(msg);
+    JValue requestPayload = Object();
+    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
+        return sendResponse(request, errCode);
+    }
+
+    BugreportHandler* self = (BugreportHandler*)ctx;
+    string summary, description, priority, reproducibility;
     JValue screenshots = Array();
     string username, password;
     JValue config = Object();
@@ -543,9 +529,14 @@ ErrCode BugreportHandler::createBug(JValue& requestPayload, JValue& responsePayl
     char* buffer;
     if (!JValueUtil::getValue(requestPayload, "summary", summary)) {
         PLUGIN_ERROR("summary is required");
-        return ErrCode_INVALID_REQUEST_PARAMS;
+        return sendResponse(request, ErrCode_INVALID_REQUEST_PARAMS);
     }
     payload.put("summary", summary);
+    if (JValueUtil::getValue(requestPayload, "description", description)) {
+        payload.put("description", description);
+    } else {
+        payload.put("description", self->m_configManager.getDescription());
+    }
     if (JValueUtil::getValue(requestPayload, "priority", priority)) {
         payload.put("priority", priority);
     }
@@ -563,28 +554,81 @@ ErrCode BugreportHandler::createBug(JValue& requestPayload, JValue& responsePayl
             payload.put("upload-files", screenshotStr.erase(screenshotStr.length()-1));
         }
     }
-    if (!m_configManager.getUsername().empty()) {
-        payload.put("username", m_configManager.getUsername());
-    }
-    if (!m_configManager.getPassword().empty()) {
-        payload.put("password", m_configManager.getPassword());
-    }
-    if (!pushToRpaQueue(payload)) {
+    if (!self->pushToRpaQueue(payload)) {
         PLUGIN_ERROR("Failed in rpa_queue_push");
-        return ErrCode_INTERNAL_ERROR;
+        return sendResponse(request, ErrCode_INTERNAL_ERROR);
     }
-    return ErrCode_NONE;
+    return sendResponse(request, ErrCode_NONE);
 }
 
-ErrCode BugreportHandler::processDeprecatedMethod(JValue&, JValue&)
+bool BugreportHandler::processDeprecatedMethod(LSHandle *sh, LSMessage *msg, void *ctx)
 {
-    return ErrCode_DEPRECATED_METHOD;
+    ErrCode errCode = ErrCode_NONE;
+    Message request(msg);
+    JValue requestPayload = Object();
+    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
+        return sendResponse(request, errCode);
+    }
+
+    return sendResponse(request, ErrCode_DEPRECATED_METHOD);
 }
 
-ErrCode BugreportHandler::processF9(JValue&, JValue&)
+bool BugreportHandler::doHeadlessBugReport(LSHandle *sh, LSMessage *msg, void *ctx)
+{
+    ErrCode errCode = ErrCode_NONE;
+    Message request(msg);
+    JValue requestPayload = Object();
+    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
+        return sendResponse(request, errCode);
+    }
+
+    BugreportHandler* self = (BugreportHandler*)ctx;
+    return sendResponse(request, self->processF12());
+}
+
+bool BugreportHandler::prepareBugReport(LSHandle *sh, LSMessage *msg, void *ctx)
+{
+    ErrCode errCode = ErrCode_NONE;
+    Message request(msg);
+    JValue requestPayload = Object();
+    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
+        return sendResponse(request, errCode);
+    }
+
+    BugreportHandler* self = (BugreportHandler*)ctx;
+    return sendResponse(request, self->processF11());
+}
+
+bool BugreportHandler::resetScreenshots(LSHandle *sh, LSMessage *msg, void *ctx)
+{
+    ErrCode errCode = ErrCode_NONE;
+    Message request(msg);
+    JValue requestPayload = Object();
+    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
+        return sendResponse(request, errCode);
+    }
+
+    BugreportHandler* self = (BugreportHandler*)ctx;
+    return sendResponse(request, self->processF10());
+}
+
+bool BugreportHandler::takeScreenshot(LSHandle *sh, LSMessage *msg, void *ctx)
+{
+    ErrCode errCode = ErrCode_NONE;
+    Message request(msg);
+    JValue requestPayload = Object();
+    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
+        return sendResponse(request, errCode);
+    }
+
+    BugreportHandler* self = (BugreportHandler*)ctx;
+    return sendResponse(request, self->processF9());
+}
+
+ErrCode BugreportHandler::processF9()
 {
     PLUGIN_INFO("[CTRL][ALT][F9] Take screenshot");
-    string screenshotFile = m_screenshotManager.takeScreenshot();
+    string screenshotFile = m_screenshotManager.captureCompositorOutput();
     if (screenshotFile.empty())
         createToast("Taking screenshot fails!");
     else
@@ -592,31 +636,33 @@ ErrCode BugreportHandler::processF9(JValue&, JValue&)
     return ErrCode_NONE;
 }
 
-ErrCode BugreportHandler::processF10(JValue&, JValue&)
+ErrCode BugreportHandler::processF10()
 {
     PLUGIN_INFO("[CTRL][ALT][F10] Remove screenshot");
-    m_screenshotManager.removeAll();
+    m_screenshotManager.removeScreenshots();
     createToast("Screenshots removed!");
     return ErrCode_NONE;
 }
 
-ErrCode BugreportHandler::processF11(JValue&, JValue&)
+ErrCode BugreportHandler::processF11()
 {
     PLUGIN_INFO("[CTRL][ALT][F11] Launch bugreport app");
     launchBugreportApp();
     return ErrCode_NONE;
 }
 
-ErrCode BugreportHandler::processF12(JValue&, JValue&)
+ErrCode BugreportHandler::processF12()
 {
     PLUGIN_INFO("[CTRL][ALT][F12] Create bug");
     if (m_screenshotManager.getScreenshots().empty())
-        m_screenshotManager.takeScreenshot();
+        m_screenshotManager.captureCompositorOutput();
     JValue payload = Object();
-    payload.put("summary", m_configManager.generateJiraSummary());
+    payload.put("summary", m_configManager.getSummary());
+    payload.put("description", m_configManager.getDescription());
     payload.put("upload-files", m_screenshotManager.toString());
     if (!pushToRpaQueue(payload)) {
         PLUGIN_ERROR("Failed in rpa_queue_push");
+        return ErrCode_INTERNAL_ERROR;
     }
     return ErrCode_NONE;
 }

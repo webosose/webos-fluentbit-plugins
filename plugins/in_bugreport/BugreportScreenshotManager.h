@@ -37,8 +37,8 @@ public:
     bool initialize(LunaHandle* lunaHandle);
     bool finalize();
 
-    string takeScreenshot();
-    void removeAll();
+    string captureCompositorOutput();
+    void removeScreenshots();
     const list<string> getScreenshots() const;
     JValue toJson() const;
     string toString() const;

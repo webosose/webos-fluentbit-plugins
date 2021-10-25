@@ -42,7 +42,8 @@ public:
 
     string getUsername() const;
     string getPassword() const;
-    string generateJiraSummary() const;
+    string getSummary() const;
+    string getDescription() const;
 
 private:
     JValue m_config;

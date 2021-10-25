@@ -41,12 +41,23 @@ public:
     int onCollect(struct flb_input_instance *ins, struct flb_config *config, void *in_context);
 
 private:
-    static bool onDeviceListChanged(LSHandle *sh, LSMessage *reply, void *ctx);
+    static bool onGetAttachedNonStorageDeviceList(LSHandle *sh, LSMessage *reply, void *ctx);
     static int findKeyboardFd();
     static gboolean onKeyboardEvent(GIOChannel *channel, GIOCondition condition, gpointer data);
     static bool onCreateToast(LSHandle *sh, LSMessage *message, void *ctx);
     static bool onLaunchBugreportApp(LSHandle *sh, LSMessage *message, void *ctx);
     static bool onProcessMethod(LSHandle *sh, LSMessage *msg, void *ctx);
+    static ErrCode parseRequest(Message& request, JValue& requestPayload, void* ctx);
+    static bool sendResponse(Message& request, ErrCode errCode);
+    static bool sendResponse(Message& request, const string& payload);
+    static bool getConfig(LSHandle *sh, LSMessage *msg, void *ctx);
+    static bool setConfig(LSHandle *sh, LSMessage *msg, void *ctx);
+    static bool createBug(LSHandle *sh, LSMessage *msg, void *ctx);
+    static bool processDeprecatedMethod(LSHandle *sh, LSMessage *msg, void *ctx);
+    static bool doHeadlessBugReport(LSHandle *sh, LSMessage *msg, void *ctx);
+    static bool prepareBugReport(LSHandle *sh, LSMessage *msg, void *ctx);
+    static bool resetScreenshots(LSHandle *sh, LSMessage *msg, void *ctx);
+    static bool takeScreenshot(LSHandle *sh, LSMessage *msg, void *ctx);
 
     BugreportHandler();
 
@@ -54,15 +65,10 @@ private:
     void createToast(const string& message);
     void launchBugreportApp();
     bool pushToRpaQueue(JValue payload);
-
-    ErrCode getConfig(JValue& requestPayload, JValue& responsePayload);
-    ErrCode setConfig(JValue& requestPayload, JValue& responsePayload);
-    ErrCode createBug(JValue& requestPayload, JValue& responsePayload);
-    ErrCode processDeprecatedMethod(JValue& = Null, JValue& = Null);
-    ErrCode processF9(JValue& = Null , JValue& = Null);
-    ErrCode processF10(JValue& = Null , JValue& = Null);
-    ErrCode processF11(JValue& = Null , JValue& = Null);
-    ErrCode processF12(JValue& = Null , JValue& = Null);
+    ErrCode processF9();
+    ErrCode processF10();
+    ErrCode processF11();
+    ErrCode processF12();
 
     static const LSMethod METHOD_TABLE[];
     static JValue Null;
@@ -70,7 +76,7 @@ private:
     struct flb_input_instance *m_inputInstance;
     rpa_queue_t *m_queue;
     ServerStatus m_serverStatus;
-    LSMessageToken m_deviceListSubscriptionToken;
+    Call m_getAttachedNonStorageDeviceListCall;
     int m_keyboardFd;
     bool m_isAltPressed;
     bool m_isCtrlPressed;

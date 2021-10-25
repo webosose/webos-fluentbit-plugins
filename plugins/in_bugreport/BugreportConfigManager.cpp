@@ -101,9 +101,14 @@ string BugreportConfigManager::getPassword() const
     return password;
 }
 
-string BugreportConfigManager::generateJiraSummary() const
+string BugreportConfigManager::getSummary() const
 {
     string foundOn = "[" WEBOS_TARGET_DISTRO "-" WEBOS_TARGET_MACHINE "]";
     string username = getUsername().empty() ? JIRA_DEFAULT_USERNAME : getUsername();
     return foundOn + " " + username + "_" + Time::getCurrentTime("%Y%m%d%H%M");
+}
+
+string BugreportConfigManager::getDescription() const
+{
+    return "<p>Steps To Reproduce:<br>1.<br>2.<br>3.</p><p>Expected Result:</p><p>Actual Result:</p>";
 }

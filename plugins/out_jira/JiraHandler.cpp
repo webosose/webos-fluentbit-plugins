@@ -23,6 +23,7 @@
 #include "util/Logger.h"
 
 #define KEY_SUMMARY             "summary"
+#define KEY_DESCRIPTION         "description"
 #define KEY_UPLOAD_FILES        "upload-files"
 #define KEY_USERNAME            "username"
 #define KEY_PASSWORD            "password"
@@ -127,6 +128,7 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
     flb_sds_t json;
     JValue object;
     string summary;
+    string description;
     string upload_files;
     string username;
     string password;
@@ -148,6 +150,9 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
     }
     PLUGIN_INFO("summary : %s", summary.c_str());
 
+    if (JValueUtil::getValue(object, KEY_DESCRIPTION, description)) {
+        PLUGIN_INFO("description : %s", description.c_str());
+    }
     if (JValueUtil::getValue(object, KEY_UPLOAD_FILES, upload_files)) {
         PLUGIN_INFO("upload-files : %s", upload_files.c_str());
     }
@@ -170,8 +175,9 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
     command = "webos_issue.py --summary \'" + summary + "\' "
             + (username.empty() ? "" : "--id " + username + " ")
             + (password.empty() ? "" : "--pw " + password + " ")
+            + (description.empty() ? "" : "--description \'" + description + "\' ")
             + (priority.empty() ? "" : "--priority " + priority + " ")
-            + (reproducibility.empty() ? "" : "--reproducibility \'" + reproducibility + "\' ")
+            + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
             + (isCrashReport ? "--unique-summary --attach-crashcounter " : "")
             + (upload_files.empty() ? "" : "--upload-files " + upload_files);
     PLUGIN_INFO("command : %s", command.c_str());

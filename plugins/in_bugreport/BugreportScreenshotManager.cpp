@@ -74,7 +74,7 @@ bool BugreportScreenshotManager::finalize()
     return true;
 }
 
-string BugreportScreenshotManager::takeScreenshot()
+string BugreportScreenshotManager::captureCompositorOutput()
 {
     string prefix = "screenshot_" + Time::getCurrentTime("%Y%m%d%H%M%S");
     string suffix = ".jpg";
@@ -106,12 +106,11 @@ string BugreportScreenshotManager::takeScreenshot()
         return "";
     }
     PLUGIN_DEBUG("%s", responsePayload.stringify().c_str());
-    m_screenshots.emplace_back(filepath);
     PLUGIN_INFO("Screenshot captured : %s", filepath.c_str());
     return filepath;
 }
 
-void BugreportScreenshotManager::removeAll()
+void BugreportScreenshotManager::removeScreenshots()
 {
     for (string& screenshot : m_screenshots) {
         if (0 == unlink(screenshot.c_str())) {
