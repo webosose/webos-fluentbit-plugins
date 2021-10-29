@@ -16,23 +16,24 @@
 #
 # LICENSE@@@
 
-cmake_minimum_required(VERSION 2.8.7)
-project(webos-fluentbit-plugins)
-
-include(webOS/webOS)
-webos_modules_init(1 6 3)
-webos_component(1 0 0)
-
-add_subdirectory(python3-webos)
-webos_include_install_paths()
-
 include(FindPkgConfig)
-add_subdirectory(plugins)
-add_subdirectory(src/coredump_example)
 
-# install
-file(GLOB fluent-bit_conf files/conf/*.conf)
+pkg_check_modules(GIO2 REQUIRED gio-2.0)
+include_directories(${GIO2_INCLUDE_DIRS})
+# webos_add_compiler_flags(ALL ${GIO2_CFLAGS_OTHER})
 
-install(FILES ${fluent-bit_conf} DESTINATION ${WEBOS_INSTALL_SYSCONFDIR}/fluent-bit)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-webos_build_system_bus_files()
+file(GLOB_RECURSE SRC_C ${CMAKE_CURRENT_SOURCE_DIR}/*.c)
+file(GLOB_RECURSE SRC_CPP ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+
+set(SRC
+    ${SRC_C}
+    ${SRC_CPP}
+)
+
+set(LIB
+    ${GIO2_LDFLAGS}
+)
+
+FLB_PLUGIN(in_bugreport "${SRC}" "${LIB}")

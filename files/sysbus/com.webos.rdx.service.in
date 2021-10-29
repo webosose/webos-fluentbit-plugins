@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=com.webos.rdx.*;com.webos.service.bugreport
+Exec=@WEBOS_INSTALL_BINDIR@/fluent-bit
+Type=static

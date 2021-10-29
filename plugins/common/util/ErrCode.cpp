@@ -1,4 +1,4 @@
-// Copyright (c) 2020 LG Electronics, Inc.
+// Copyright (c) 2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,24 +14,19 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef UTIL_TIME_H_
-#define UTIL_TIME_H_
+#include "ErrCode.h"
 
-#include <iostream>
-#include <time.h>
-
-using namespace std;
-
-bool operator <(const timespec& lhs, const timespec& rhs);
-
-class Time {
-public:
-    static std::string getCurrentTime(const char* format = "%Y-%m-%d %H:%M:%S");
-    static string generateUid();
-    static string toISO8601(struct timespec* ts);
-
-    Time();
-    virtual ~Time();
-};
-
-#endif /* UTIL_TIME_H_ */
+const char* strerror(enum ErrCode errCode)
+{
+    switch (errCode) {
+    case ErrCode_NONE:
+        return "Success";
+    case ErrCode_INTERNAL_ERROR:
+        return "Internal error";
+    case ErrCode_DEPRECATED_METHOD:
+        return "Deprecated method";
+    case ErrCode_INVALID_REQUEST_PARAMS:
+        return "Invalid request params";
+    }
+    return "Undefined error";
+}

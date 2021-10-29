@@ -1,0 +1,8 @@
+{
+    "com.webos.service.bugreport": [
+        "application.launcher",
+        "notification.operation",
+        "surfacemanager.devutility",
+	    "physicaldevice.query"
+    ]
+}

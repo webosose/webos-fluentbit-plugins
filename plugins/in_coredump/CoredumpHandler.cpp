@@ -223,22 +223,18 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
     char summary[STR_LEN];
     char temp[STR_LEN];
 
-    int bytes = 0;
     int ret;
     int len;
     int i;
 
-    bytes = read(ctx->fd, ctx->buf + ctx->buf_len, sizeof(ctx->buf) - ctx->buf_len - 1);
-
-    if (bytes <= 0) {
+    ctx->buf_start = 0;
+    ctx->buf_len = read(ctx->fd, ctx->buf, sizeof(ctx->buf) - 1);
+    if (ctx->buf_len <= 0) {
         PLUGIN_ERROR("Failed to read data");
         flb_input_collector_pause(ctx->coll_fd, ctx->ins);
         flb_engine_exit(config);
         return -1;
     }
-
-    ctx->buf_start = ctx->buf_len;
-    ctx->buf_len += bytes;
     ctx->buf[ctx->buf_len] = '\0';
 
     PLUGIN_INFO("Catch the new coredump event");
@@ -247,17 +243,18 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    while (ctx->buf_start < ctx->buf_len) {
+    for (; ctx->buf_start < ctx->buf_len; ctx->buf_start += EVENT_SIZE + event->len) {
+        PLUGIN_DEBUG("while loop: buf_start=%d, buf_len=%d", ctx->buf_start, ctx->buf_len);
         event=(struct inotify_event*) &ctx->buf[ctx->buf_start];
 
         if (event->len == 0) {
             PLUGIN_ERROR("Event length is 0");
-            break;
+            continue;
         }
 
         if (!(event->mask & IN_CREATE)) {
             PLUGIN_ERROR("Not create event : %s", event->name);
-            break;
+            continue;
         }
 
         snprintf(full_path, STR_LEN, "%s/%s", ctx->path, event->name);
@@ -269,12 +266,12 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
 
         if (verifyCoredumpFile(event->name) == -1) {
             PLUGIN_ERROR("Not coredump file");
-            break;
+            continue;
         }
 
         if (parseCoredumpComm(full_path, comm, pid, exe) == -1) {
             PLUGIN_ERROR("Fail to parse coredump file");
-            break;
+            continue;
         }
         PLUGIN_INFO("comm : (%s), pid : (%s), exe (%s)", comm, pid, exe);
 
@@ -290,16 +287,17 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
 
         if (checkExeTime(exe) == -1) {
             PLUGIN_WARN("Not official exe file");
-            break;
+            continue;
         }
 
         if (isExceptedExe(exe)) {
             PLUGIN_WARN("The exe file exists in exception list.");
-            break;
+            continue;
         }
 
         if ((access("/run/systemd/journal/socket", F_OK) == 0)) {
-            sprintf(crashreport, "%s/%s-crashreport.txt", PATH_COREDUMP_DIRECTORY, event->name);
+            // For consistency, change the crash report path to /tmp.
+            sprintf(crashreport, "%s/%s-crashreport.txt", "/tmp", event->name);
             createCrashreport(ctx->crashreport_script, event->name, crashreport);
         } else {
             strncpy(temp, event->name, strlen(event->name) - 3);
@@ -309,7 +307,7 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
 
         if (access(crashreport, F_OK) != 0) {
             PLUGIN_ERROR("Failed to create crashreport : %s", crashreport);
-            break;
+            continue;
         }
         PLUGIN_INFO("The crashreport file is created : %s)", crashreport);
 
@@ -344,14 +342,10 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
         msgpack_pack_str(&mp_pck, len=strlen(summary));
         msgpack_pack_str_body(&mp_pck, summary, len);
         PLUGIN_INFO("Add msgpack - key (%s) : val (%s)", KEY_SUMMARY, summary);
-
-        // flush to fluentbit
-        flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-
-        ctx->buf_start += EVENT_SIZE + event->len;
     }
 
-    ctx->buf_len=ctx->buf_start=0;
+    // flush to fluentbit
+    flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;

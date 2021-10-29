@@ -1,0 +1,28 @@
+{
+    "diagnostics.telemetry": [
+        "com.webos.service.bugreport/getConfig",
+        "com.webos.service.bugreport/setConfig",
+        "com.webos.service.bugreport/createBug",
+        "com.webos.service.bugreport/disableCrashPopup",
+        "com.webos.service.bugreport/disableCrashReporting",
+        "com.webos.service.bugreport/doHeadlessBugReport",
+        "com.webos.service.bugreport/enableCrashPopup",
+        "com.webos.service.bugreport/enableCrashReporting",
+        "com.webos.service.bugreport/fileBugReport",
+        "com.webos.service.bugreport/fileCrashReport",
+        "com.webos.service.bugreport/getBuildMaxAge",
+        "com.webos.service.bugreport/getBugReportingConfig",
+        "com.webos.service.bugreport/getCrashReportingJira",
+        "com.webos.service.bugreport/isCrashPopupEnabled",
+        "com.webos.service.bugreport/isCrashReportingEnabled",
+        "com.webos.service.bugreport/prepareBugReport",
+        "com.webos.service.bugreport/removeCredential",
+        "com.webos.service.bugreport/resetScreenshots",
+        "com.webos.service.bugreport/setBuildMaxAge",
+        "com.webos.service.bugreport/setCrashReportingJira",
+        "com.webos.service.bugreport/signInToJira",
+        "com.webos.service.bugreport/signOutFromJira",
+        "com.webos.service.bugreport/storeCredential",
+        "com.webos.service.bugreport/takeScreenshot"
+    ]
+}
