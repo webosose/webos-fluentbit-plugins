@@ -243,7 +243,7 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    for (; ctx->buf_start < ctx->buf_len; ctx->buf_start += EVENT_SIZE + event->len) {
+    for (; ctx->buf_start + EVENT_SIZE < ctx->buf_len; ctx->buf_start += EVENT_SIZE + event->len) {
         PLUGIN_DEBUG("while loop: buf_start=%d, buf_len=%d", ctx->buf_start, ctx->buf_len);
         event=(struct inotify_event*) &ctx->buf[ctx->buf_start];
 
