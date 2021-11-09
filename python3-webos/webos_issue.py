@@ -46,7 +46,7 @@ class WebOSIssue:
             password=pw)
         return
 
-    def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, unique_summary=False, component=COMPONENT_TEMP):
+    def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, unique_summary=False, components=[COMPONENT_TEMP]):
         if summary is None and description is None:
             return None
 
@@ -75,14 +75,10 @@ class WebOSIssue:
             fields['priority'] = {'name': priority}
         if reproducibility is not None:
             fields['customfield_11202'] = {'value': reproducibility}
-        common.debug('component {}'.format(component))
-        if component != COMPONENT_TEMP:
-            components = common.get_value('customfield', 'components')
-            if component not in components:
-                component = COMPONENT_TEMP
-        fields['components'] = [
-            { 'name': component }
-        ]
+        common.debug('components {}'.format(components))
+        fields['components'] = []
+        for component in components:
+            fields['components'].append({'name': component})
 
         if unique_summary:
             if summary is None:
@@ -244,13 +240,14 @@ if __name__ == "__main__":
     parser.add_argument('--key',              type=str, help='jira key')
     parser.add_argument('--summary',          type=str, help='jira summary')
     parser.add_argument('--description',      type=str, help='jira description')
-    parser.add_argument('--component',        type=str, help='jira component')
     parser.add_argument('--comment',          type=str, help='jira comment')
     parser.add_argument('--priority',         type=str, help='jira priority')
     parser.add_argument('--reproducibility',  type=str, help='jira reproducibility')
 
     parser.add_argument('--attach-files',     type=str, nargs='*', help='All files are attached into jira ticket')
     parser.add_argument('--upload-files',     type=str, nargs='*', help='All files are uploaded into file server')
+
+    parser.add_argument('--components',       action='append', help='jira components')
 
     parser.add_argument('--unique-summary',   action='store_true', help='Create issue only if it is unique summary')
     parser.add_argument('--without-sysinfo',  action='store_true', help='Disable uploading system information')
@@ -285,9 +282,13 @@ if __name__ == "__main__":
     # handle 'id' and 'pw' first
     if args.id is not None or args.pw is not None:
         if args.id is not None and args.pw is not None:
-            pw = Crypto.instance().encrypt(Crypto.instance().b64decode(args.pw))
-            common.set_value('account', 'id', args.id)
-            common.set_value('account', 'pw', pw)
+            if len(args.id) == 0 or len(args.pw) == 0:
+                common.remove('account', 'id')
+                common.remove('account', 'pw')
+            else:
+                pw = Crypto.instance().encrypt(Crypto.instance().b64decode(args.pw))
+                common.set_value('account', 'id', args.id)
+                common.set_value('account', 'pw', pw)
         else:
             common.error("'id' and 'pw' are needed")
             exit(1)
@@ -345,13 +346,13 @@ if __name__ == "__main__":
         WebOSCapture.instance().capture_screenshot(screenshot_path)
         upload_files.append(screenshot_path)
 
-        component = None
-        if args.component is None:
-            component = WebOSIssue.instance().guess_component(args.summary)
+        components = []
+        if args.components is None:
+            components = [WebOSIssue.instance().guess_component(args.summary)]
         else:
-            component = args.component
+            components = args.components
         try:
-            result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.unique_summary, component)
+            result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.unique_summary, components)
         except Exception as ex:
             common.error(ex.response.text)
             if args.enable_popup:

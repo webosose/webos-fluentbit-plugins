@@ -136,6 +136,9 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
     string password;
     string priority;
     string reproducibility;
+//    msgpack_object* componentsObj;
+//    list<string> components;
+//    string componentsStr = "";
     string command;
     bool isCrashReport = (string::npos != string(tag, tag_len).find("coredump"));
 
@@ -171,14 +174,23 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
         if (MSGPackUtil::getValue(payload, KEY_REPRODUCIBILITY, reproducibility)) {
             PLUGIN_INFO("reproducibility : %s", reproducibility.c_str());
         }
+//        if (MSGPackUtil::getValue(payload, KEY_COMPONENTS, &componentsObj)) {
+//            // TODO Support array in MSGPackUtil
+//            for (uint32_t idx = 0; idx < componentsObj->via.array.size; ++idx) {
+//                string component = string(componentsObj->via.array.ptr[idx].via.str.ptr, componentsObj->via.array.ptr[idx].via.str.size);
+//                components.emplace_back(component);
+//                PLUGIN_INFO("component : %s", component.c_str());
+//                componentsStr += "--components \'" + component + "\' ";
+//            }
+//        }
 
         // template : command --summary XXX --unique-summary --upload-files YYY
         // example  : webos_issue.py --summary "[CRASH][OSE] bootd" --unique-summary --upload-files core.bootd.0.....xz
 
         command = "webos_issue.py --summary \'" + summary + "\' "
-                + (username.empty() ? "" : "--id " + username + " ")
-                + (password.empty() ? "" : "--pw " + password + " ")
-                + (description.empty() ? "" : "--description \'" + description + "\' ")
+                + (username.empty() ? "" : "--id '" + username + "' ")
+                + (password.empty() ? "" : "--pw '" + password + "' ")
+                + (description.empty() ? "" : "--description '" + description + "' ")
                 + (priority.empty() ? "" : "--priority " + priority + " ")
                 + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
                 + (isCrashReport ? "--unique-summary --attach-crashcounter " : "--enable-popup ")

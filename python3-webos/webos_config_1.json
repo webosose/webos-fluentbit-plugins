@@ -279,6 +279,7 @@
     },
     "deviceName": {
         "raspberrypi4": "OSE-RPi4",
+        "raspberrypi4-64": "OSE-RPi4",
         "OSE-Emulator": "OSE-Emulator"
     }
 }

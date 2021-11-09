@@ -130,7 +130,7 @@ int CoredumpHandler::onInit(struct flb_input_instance *ins, struct flb_config *c
     if (pval)
         ctx->path = (char *)pval;
     else
-        ctx->path = PATH_COREDUMP_DIRECTORY;
+        ctx->path = (char *)PATH_COREDUMP_DIRECTORY;
     PLUGIN_INFO("Monitoring coredump file path : %s", ctx->path);
 
     // Set the crashreport script
@@ -221,7 +221,6 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
     char crashed_func[STR_LEN];
     char upload_files[STR_LEN];
     char summary[STR_LEN];
-    char temp[STR_LEN];
 
     int ret;
     int len;
@@ -300,9 +299,9 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
             sprintf(crashreport, "%s/%s-crashreport.txt", "/tmp", event->name);
             createCrashreport(ctx->crashreport_script, event->name, crashreport);
         } else {
-            strncpy(temp, event->name, strlen(event->name) - 3);
-            temp[strlen(temp)] = '\0';
-            sprintf(crashreport, "/tmp/%s-crashreport.txt", temp);
+            string filename = event->name;
+            size_t extPos = filename.find_last_of('.');
+            sprintf(crashreport, "/tmp/%s-crashreport.txt", filename.substr(0, extPos).c_str());
         }
 
         if (access(crashreport, F_OK) != 0) {
@@ -444,7 +443,7 @@ int CoredumpHandler::verifyCoredumpFile(const char *corefile)
     if (strncmp(corefile, "core", 4) != 0)
         return -1;
 
-    if (corefile[len-3] != '.' && corefile[len-2] != 'x' && corefile[len-1] != 'z')
+    if (strncmp(corefile + (len-4), ".zst", 4) != 0 && strncmp(corefile + (len-3), ".xz", 3) != 0)
         return -1;
 
     return 0;

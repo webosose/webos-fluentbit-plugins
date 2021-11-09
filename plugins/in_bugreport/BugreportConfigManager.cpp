@@ -62,33 +62,50 @@ JValue BugreportConfigManager::getConfig()
     fscanf(fp, "ID : %s\n", username);
     fscanf(fp, "PW : %s\n", password);
     PLUGIN_DEBUG("id (%s), pw (%s)", username, password);
-    m_config.put("username", username);
-    m_config.put("password", password);
+    JValue account = Object();
+    account.put("username", username);
+    account.put("password", password);
+    m_config.put("account", account);
     pclose(fp);
     return m_config.duplicate();
 }
 
-bool BugreportConfigManager::setConfig(const string& username, const string& b64encodedPassword)
+ErrCode BugreportConfigManager::setAccount(JValue& account)
 {
+    string username, b64encodedPassword;
+    if (!JValueUtil::getValue(account, "username", username)) {
+        PLUGIN_ERROR("username is required");
+        return ErrCode_INVALID_REQUEST_PARAMS;
+    }
+    if (!JValueUtil::getValue(account, "password", b64encodedPassword)) {
+        PLUGIN_ERROR("password is required");
+        return ErrCode_INVALID_REQUEST_PARAMS;
+    }
+    if ((username.length() == 0 && b64encodedPassword.length() != 0) ||
+            (username.length() != 0 && b64encodedPassword.length() == 0)) {
+        PLUGIN_ERROR("both usernamd and password should be set togegher");
+        return ErrCode_INVALID_REQUEST_PARAMS;
+    }
     // TODO check if username/password can login to jira
-    string command = "webos_issue.py --id " + username + " --pw " + b64encodedPassword;
+    string command = "webos_issue.py --id '" + username + "' --pw '" + b64encodedPassword + "'";
     PLUGIN_DEBUG("command : %s", command.c_str());
     int ret = system(command.c_str());
     if (ret == -1) {
         PLUGIN_ERROR("Failed to fork : %s", strerror(errno));
-        return false;
+        return ErrCode_INTERNAL_ERROR;
     }
     if (!WIFEXITED(ret) || WEXITSTATUS(ret) != 0) {
         PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
-        return false;
+        return ErrCode_INTERNAL_ERROR;
     }
-    return true;
+    m_config.put("account", account);
+    return ErrCode_NONE;
 }
 
 string BugreportConfigManager::getUsername() const
 {
     string username;
-    if (!JValueUtil::getValue(m_config, "username", username))
+    if (!JValueUtil::getValue(m_config, "account", "username", username))
         return "";
     return username;
 }
@@ -96,7 +113,7 @@ string BugreportConfigManager::getUsername() const
 string BugreportConfigManager::getPassword() const
 {
     string password;
-    if (!JValueUtil::getValue(m_config, "password", password))
+    if (!JValueUtil::getValue(m_config, "account", "password", password))
         return "";
     return password;
 }

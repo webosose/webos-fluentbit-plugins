@@ -76,8 +76,19 @@ void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, const JVal
         case JV_OBJECT:
             putValue(packer, kv.first.asString(), kv.second);
             break;
-        case JV_NULL:
         case JV_ARRAY:
+            packStr(packer, kv.first.asString());
+            msgpack_pack_array(packer, kv.second.arraySize());
+            for (uint32_t i = 0; i < kv.second.arraySize(); ++i) {
+                // TODO Support other type's array. Now support only string array.
+                if (kv.second[i].getType() != JV_STR) {
+                    packStr(packer, "Not implemented");
+                    continue;
+                }
+                packStr(packer, kv.second[i].asString());
+            }
+            break;
+        case JV_NULL:
         default:
             putValue(packer, kv.first.asString(), "Not implemented");
         }

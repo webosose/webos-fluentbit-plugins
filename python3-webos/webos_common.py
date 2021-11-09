@@ -71,6 +71,18 @@ def set_value(first_key, second_key, value):
     with open('/var/luna/preferences/webos_rdx.json', 'w') as json_file:
         json_file.write(json.dumps(rw_configs, indent=4, sort_keys=True))
 
+def remove(first_key, second_key):
+    if first_key not in rw_configs:
+        return
+    if second_key not in rw_configs[first_key]:
+        return
+    del rw_configs[first_key][second_key]
+    if len(rw_configs[first_key]) == 0:
+        del rw_configs[first_key]
+
+    with open('/var/luna/preferences/webos_rdx.json', 'w') as json_file:
+        json_file.write(json.dumps(rw_configs, indent=4, sort_keys=True))
+
 if __name__ == "__main__":
     print(json.dumps(mm_configs, indent=4, sort_keys=True))
 
