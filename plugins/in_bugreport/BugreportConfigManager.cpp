@@ -22,6 +22,11 @@
 #include "util/JValueUtil.h"
 #include "util/Time.h"
 
+// Exit status when setting username / password in webos_issue.py
+#define EXIT_STATUS_SUCCESS                 0
+#define EXIT_STATUS_INVALID_REQUEST_PARAMS  3
+#define EXIT_STATUS_LOGIN_FAILED            4
+
 BugreportConfigManager::BugreportConfigManager()
 {
     PLUGIN_INFO();
@@ -59,8 +64,10 @@ JValue BugreportConfigManager::getConfig()
     }
     char username[64];
     char password[64];
-    fscanf(fp, "ID : %s\n", username);
-    fscanf(fp, "PW : %s\n", password);
+    if (1 != fscanf(fp, "ID : %s\n", username))
+        PLUGIN_WARN("Failed to read ID");
+    if (1 != fscanf(fp, "PW : %s\n", password))
+        PLUGIN_WARN("Failed to read PW");
     PLUGIN_DEBUG("id (%s), pw (%s)", username, password);
     JValue account = Object();
     account.put("username", username);
@@ -96,6 +103,10 @@ ErrCode BugreportConfigManager::setAccount(JValue& account)
     }
     if (!WIFEXITED(ret) || WEXITSTATUS(ret) != 0) {
         PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
+        if (WEXITSTATUS(ret) == EXIT_STATUS_INVALID_REQUEST_PARAMS)
+            return ErrCode_INVALID_REQUEST_PARAMS;
+        if (WEXITSTATUS(ret) == EXIT_STATUS_LOGIN_FAILED)
+            return ErrCode_LOGIN_FAILED;
         return ErrCode_INTERNAL_ERROR;
     }
     m_config.put("account", account);

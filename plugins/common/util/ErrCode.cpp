@@ -27,6 +27,8 @@ const char* strerror(enum ErrCode errCode)
         return "Deprecated method";
     case ErrCode_INVALID_REQUEST_PARAMS:
         return "Invalid request params";
+    case ErrCode_LOGIN_FAILED:
+        return "Login failed";
     }
     return "Undefined error";
 }
