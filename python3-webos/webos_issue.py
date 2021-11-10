@@ -22,7 +22,7 @@ FILE_JOURNALD = 'messages.txt'
 FILE_SYSINFO = 'info.txt'
 FILE_MESSAGES = 'messages.tgz'
 FILE_SCREENSHOT = 'screenshot.jpg'
-PROJECT_KEY = 'WRN'
+PROJECT_KEY = common.get_value('jira', 'projectKey')
 
 
 class WebOSIssue:

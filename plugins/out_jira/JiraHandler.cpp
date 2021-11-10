@@ -105,6 +105,20 @@ int JiraHandler::onInit(struct flb_output_instance *ins, struct flb_config *conf
         m_jiraScript = DEFAULT_SCRIPT;
     PLUGIN_INFO("Jira script : %s", m_jiraScript.c_str());
 
+    string command = "webos_uploader.py --sync-config";
+    PLUGIN_INFO("%s", command.c_str());
+    FILE *fp = popen(command.c_str(), "r");
+    if (fp == NULL) {
+        PLUGIN_WARN("Failed to popen : %s", command.c_str());
+    } else {
+        char buff[1024];
+        while (fgets(buff, 1024, fp)) {
+            buff[strlen(buff)-1] = '\0';
+            PLUGIN_INFO("%s", buff);
+        }
+        pclose(fp);
+    }
+
     // Export context
     flb_output_set_context(ins, ctx);
     PLUGIN_INFO("initialize done");

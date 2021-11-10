@@ -9,6 +9,7 @@ import webos_common as common
 DEFAULT_SERVER = 'http://10.178.84.116:3002'
 DEFAULT_SERVER_UPLOAD = DEFAULT_SERVER + '/upload'
 DEFAULT_SERVER_CRASH = DEFAULT_SERVER + '/crash'
+DEFAULT_SERVER_CONFIG = DEFAULT_SERVER + '/config'
 
 class WebOSUploader:
     _instance = None
@@ -60,13 +61,31 @@ class WebOSUploader:
         common.debug('{}, count {}'.format(response.status_code, response.text))
         return response.text
 
+    def sync_config(self, url=DEFAULT_SERVER_CONFIG):
+        common.info('GET {}'.format(url))
+        response = requests.get(url)
+        common.info('{}'.format(response.status_code))
+        if not response.ok:
+            common.warn(response.text)
+            return
+        common.sync_config(response.json())
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=os.path.basename(__file__))
     parser.add_argument('--key',           type=str, help='jira key (ex : PLAT-XXXXX)')
     parser.add_argument('--url',           type=str, default=DEFAULT_SERVER_UPLOAD, help='File server URL')
     parser.add_argument('--upload-files',  type=str, nargs='*', help='Files for uploading.')
+    parser.add_argument('--sync-config',   action='store_true', help='Sync config with server')
 
     args = parser.parse_args()
+
+    if args.sync_config:
+        try:
+            WebOSUploader.instance().sync_config()
+        except Exception as ex:
+            common.warn(ex)
+        exit(1)
 
     print("WARNING: Recommend to use this with webos_issue.py. Uploaded files can be deleted based on status of jira ticket.")
     if args.key is None or args.url is None or args.upload_files is None:
