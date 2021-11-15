@@ -22,6 +22,7 @@ enum ErrCode {
     ErrCode_INTERNAL_ERROR = 1,
     ErrCode_DEPRECATED_METHOD = 2,
     ErrCode_INVALID_REQUEST_PARAMS = 3,
+    ErrCode_LOGIN_FAILED = 4,
 };
 
 extern const char* strerror(enum ErrCode errCode);

@@ -25,6 +25,7 @@
 #include "bus/LunaHandle.h"
 #include "interface/IClassName.h"
 #include "interface/ISingleton.h"
+#include "util/ErrCode.h"
 
 using namespace std;
 using namespace pbnjson;
@@ -38,7 +39,7 @@ public:
     bool finalize();
 
     JValue getConfig();
-    bool setConfig(const string& username, const string& password);
+    ErrCode setAccount(JValue& account);
 
     string getUsername() const;
     string getPassword() const;

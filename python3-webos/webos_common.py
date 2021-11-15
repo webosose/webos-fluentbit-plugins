@@ -12,6 +12,8 @@ from cryptography.fernet import Fernet
 
 ####### CONFIG #######
 
+RDX_JSON = '/var/luna/preferences/webos_rdx.json'
+RDX_SYNC_JSON = '/var/luna/preferences/webos_rdx_sync.json'
 
 mm_configs = {}
 rw_configs = {}
@@ -51,7 +53,8 @@ def update_configs(file):
 
 update_configs('/etc/webos_config_1.json')
 update_configs('/etc/webos_config_2.json')
-rw_configs = update_configs('/var/luna/preferences/webos_rdx.json')
+update_configs(RDX_SYNC_JSON)
+rw_configs = update_configs(RDX_JSON)
 
 def get_value(first_key, second_key=None):
     try:
@@ -68,8 +71,37 @@ def set_value(first_key, second_key, value):
     mm_configs[first_key][second_key] = value
     rw_configs[first_key][second_key] = value
 
-    with open('/var/luna/preferences/webos_rdx.json', 'w') as json_file:
+    with open(RDX_JSON, 'w') as json_file:
         json_file.write(json.dumps(rw_configs, indent=4, sort_keys=True))
+
+def remove(first_key, second_key):
+    if first_key not in rw_configs:
+        return
+    if second_key not in rw_configs[first_key]:
+        return
+    del rw_configs[first_key][second_key]
+    if len(rw_configs[first_key]) == 0:
+        del rw_configs[first_key]
+
+    with open(RDX_JSON, 'w') as json_file:
+        json_file.write(json.dumps(rw_configs, indent=4, sort_keys=True))
+
+def sync_config(config):
+    contents = None
+    try:
+        with open(RDX_SYNC_JSON) as json_file:
+            contents = json.load(json_file)
+        json_file.close()
+    except Exception as ex:
+        info(ex)
+
+    if contents == config:
+        debug('The same config as before')
+        return
+    info('Write {}'.format(RDX_SYNC_JSON))
+    with open(RDX_SYNC_JSON, 'w') as json_file:
+        json_file.write(json.dumps(config, indent=4, sort_keys=True))
+
 
 if __name__ == "__main__":
     print(json.dumps(mm_configs, indent=4, sort_keys=True))

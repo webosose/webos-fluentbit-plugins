@@ -494,16 +494,11 @@ bool BugreportHandler::setConfig(LSHandle *sh, LSMessage *msg, void *ctx)
 
     BugreportHandler* self = (BugreportHandler*)ctx;
     string username, b64encodedPassword;
-    if (!JValueUtil::getValue(requestPayload, "username", username)) {
-        PLUGIN_ERROR("username is required");
-        return sendResponse(request, ErrCode_INVALID_REQUEST_PARAMS);
-    }
-    if (!JValueUtil::getValue(requestPayload, "password", b64encodedPassword)) {
-        PLUGIN_ERROR("password is required");
-        return sendResponse(request, ErrCode_INVALID_REQUEST_PARAMS);
-    }
-    if (!self->m_configManager.setConfig(username, b64encodedPassword)) {
-        return sendResponse(request, ErrCode_INTERNAL_ERROR);
+    JValue account = Object();
+    if (JValueUtil::getValue(requestPayload, "account", account)) {
+        if (ErrCode_NONE != (errCode = self->m_configManager.setAccount(account))) {
+            return sendResponse(request, errCode);
+        }
     }
     return sendResponse(request, ErrCode_NONE);
 }
@@ -520,6 +515,7 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
     BugreportHandler* self = (BugreportHandler*)ctx;
     string summary, description, priority, reproducibility;
     JValue screenshots = Array();
+//    JValue components = Array();
     string username, password;
     JValue config = Object();
     JValue payload = Object();
@@ -552,6 +548,9 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
             payload.put("upload-files", screenshotStr.erase(screenshotStr.length()-1));
         }
     }
+//    if (JValueUtil::getValue(requestPayload, "components", components) && components.isArray()) {
+//        payload.put("components", components);
+//    }
     if (!self->pushToRpaQueue(payload)) {
         PLUGIN_ERROR("Failed in rpa_queue_push");
         return sendResponse(request, ErrCode_INTERNAL_ERROR);
@@ -652,9 +651,7 @@ ErrCode BugreportHandler::processF11()
 ErrCode BugreportHandler::processF12()
 {
     PLUGIN_INFO("[CTRL][ALT][F12] Create bug");
-    if (m_screenshotManager.getScreenshots().empty()) {
-        m_screenshotManager.captureCompositorOutput();
-    }
+    m_screenshotManager.captureCompositorOutput();
     JValue payload = Object();
     payload.put("summary", m_configManager.getSummary());
     payload.put("description", m_configManager.getDescription());

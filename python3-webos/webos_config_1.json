@@ -1,6 +1,7 @@
 {
     "jira": {
-        "url" : "http://clm.lge.com/issue"
+        "url" : "http://clm.lge.com/issue",
+        "projectKey": "WRN"
     },
     "account": {
         "id": "webosreporter",
@@ -279,6 +280,7 @@
     },
     "deviceName": {
         "raspberrypi4": "OSE-RPi4",
+        "raspberrypi4-64": "OSE-RPi4",
         "OSE-Emulator": "OSE-Emulator"
     }
 }

@@ -5,6 +5,7 @@ import os
 import json
 import base64
 import shutil
+import requests
 
 import webos_common as common
 
@@ -22,8 +23,11 @@ FILE_JOURNALD = 'messages.txt'
 FILE_SYSINFO = 'info.txt'
 FILE_MESSAGES = 'messages.tgz'
 FILE_SCREENSHOT = 'screenshot.jpg'
-PROJECT_KEY = 'WRN'
+PROJECT_KEY = common.get_value('jira', 'projectKey')
 
+EXIT_STATUS_SUCCESS = 0
+EXIT_STATUS_INVALID_REQUEST_PARAMS = 3
+EXIT_STATUS_LOGIN_FAILED = 4
 
 class WebOSIssue:
     _instance = None
@@ -46,7 +50,7 @@ class WebOSIssue:
             password=pw)
         return
 
-    def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, unique_summary=False, component=COMPONENT_TEMP):
+    def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, unique_summary=False, components=[COMPONENT_TEMP]):
         if summary is None and description is None:
             return None
 
@@ -75,14 +79,10 @@ class WebOSIssue:
             fields['priority'] = {'name': priority}
         if reproducibility is not None:
             fields['customfield_11202'] = {'value': reproducibility}
-        common.debug('component {}'.format(component))
-        if component != COMPONENT_TEMP:
-            components = common.get_value('customfield', 'components')
-            if component not in components:
-                component = COMPONENT_TEMP
-        fields['components'] = [
-            { 'name': component }
-        ]
+        common.debug('components {}'.format(components))
+        fields['components'] = []
+        for component in components:
+            fields['components'].append({'name': component})
 
         if unique_summary:
             if summary is None:
@@ -216,7 +216,7 @@ class WebOSIssue:
     def get_jira(self):
         return self._jira
 
-    def show_component_registeredin_project(self, project_key=PROJECT_KEY):
+    def get_project_components(self, project_key=PROJECT_KEY):
         components = self._jira.get_project_components(project_key)
         for comp in components:
             print(comp['name'])
@@ -244,7 +244,6 @@ if __name__ == "__main__":
     parser.add_argument('--key',              type=str, help='jira key')
     parser.add_argument('--summary',          type=str, help='jira summary')
     parser.add_argument('--description',      type=str, help='jira description')
-    parser.add_argument('--component',        type=str, help='jira component')
     parser.add_argument('--comment',          type=str, help='jira comment')
     parser.add_argument('--priority',         type=str, help='jira priority')
     parser.add_argument('--reproducibility',  type=str, help='jira reproducibility')
@@ -252,13 +251,15 @@ if __name__ == "__main__":
     parser.add_argument('--attach-files',     type=str, nargs='*', help='All files are attached into jira ticket')
     parser.add_argument('--upload-files',     type=str, nargs='*', help='All files are uploaded into file server')
 
+    parser.add_argument('--components',       action='append', help='jira components')
+
     parser.add_argument('--unique-summary',   action='store_true', help='Create issue only if it is unique summary')
     parser.add_argument('--without-sysinfo',  action='store_true', help='Disable uploading system information')
     parser.add_argument('--show-id',          action='store_true', help='Show ID and PASS')
     parser.add_argument('--show-component',   action='store_true', help='Show all components')
     parser.add_argument('--show-devicename',  action='store_true', help='Show all supported devices')
     parser.add_argument('--attach-crashcounter', action='store_true', help='Attach crashcounter in description')
-    parser.add_argument('--show-component-registeredin-project', action='store_true', help='Show all components registered in project')
+    parser.add_argument('--get-project-components', action='store_true', help='Show all components registered in project')
     parser.add_argument('--enable-popup',     action='store_true', help='Display the result in a pop-up')
 
     args = parser.parse_args()
@@ -284,16 +285,29 @@ if __name__ == "__main__":
 
     # handle 'id' and 'pw' first
     if args.id is not None or args.pw is not None:
-        if args.id is not None and args.pw is not None:
-            pw = Crypto.instance().encrypt(Crypto.instance().b64decode(args.pw))
+        if args.id is None or args.pw is None:
+            common.error("'id' and 'pw' are needed")
+            exit(EXIT_STATUS_INVALID_REQUEST_PARAMS)
+        if len(args.id) == 0 or len(args.pw) == 0:
+            common.remove('account', 'id')
+            common.remove('account', 'pw')
+            exit(EXIT_STATUS_SUCCESS)
+        try:
+            pw = Crypto.instance().b64decode(args.pw)
+            jira = Jira(common.get_value('jira', 'url'), args.id, pw)
+            jira.user(args.id)
+            pw = Crypto.instance().encrypt(pw)
             common.set_value('account', 'id', args.id)
             common.set_value('account', 'pw', pw)
-        else:
-            common.error("'id' and 'pw' are needed")
-            exit(1)
+        except base64.binascii.Error as ex:
+            common.error(ex)
+            exit(EXIT_STATUS_INVALID_REQUEST_PARAMS)
+        except requests.exceptions.HTTPError as ex:
+            common.error(ex)
+            exit(EXIT_STATUS_LOGIN_FAILED)
 
-    if args.show_component_registeredin_project:
-        WebOSIssue.instance().show_component_registeredin_project()
+    if args.get_project_components:
+        WebOSIssue.instance().get_project_components()
         exit(1)
 
     key = args.key
@@ -345,13 +359,13 @@ if __name__ == "__main__":
         WebOSCapture.instance().capture_screenshot(screenshot_path)
         upload_files.append(screenshot_path)
 
-        component = None
-        if args.component is None:
-            component = WebOSIssue.instance().guess_component(args.summary)
+        components = []
+        if args.components is None:
+            components = [WebOSIssue.instance().guess_component(args.summary)]
         else:
-            component = args.component
+            components = args.components
         try:
-            result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.unique_summary, component)
+            result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.unique_summary, components)
         except Exception as ex:
             common.error(ex.response.text)
             if args.enable_popup:
