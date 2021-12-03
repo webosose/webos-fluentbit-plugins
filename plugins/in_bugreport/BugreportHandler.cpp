@@ -230,9 +230,6 @@ bool BugreportHandler::onGetAttachedNonStorageDeviceList(LSHandle *sh, LSMessage
     }
     int newFd = findKeyboardFd();
     if (oldFd != newFd) {
-        if (oldFd != -1) {
-            close(oldFd);
-        }
         self->m_keyboardFd = newFd;
         PLUGIN_INFO("Keyboard fd : %d", newFd);
         GIOChannel *channel = g_io_channel_unix_new(newFd);

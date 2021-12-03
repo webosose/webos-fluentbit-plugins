@@ -64,9 +64,9 @@ JValue BugreportConfigManager::getConfig()
     }
     char username[64];
     char password[64];
-    if (1 != fscanf(fp, "ID : %s\n", username))
+    if (fscanf(fp, "ID : %63s\n", username) != 1)
         PLUGIN_WARN("Failed to read ID");
-    if (1 != fscanf(fp, "PW : %s\n", password))
+    if (fscanf(fp, "PW : %63s\n", password) != 1)
         PLUGIN_WARN("Failed to read PW");
     PLUGIN_DEBUG("id (%s), pw (%s)", username, password);
     JValue account = Object();

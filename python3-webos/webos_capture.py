@@ -111,7 +111,7 @@ class WebOSCapture:
         return
 
     def capture_screenshot(self, file=DEFAULT_SCREENSHOT):
-        if NYX.instance().get_info()['device_name'] == 'raspberrypi4':
+        if 'OSE' in NYX.instance().get_info()['webos_name']:
             args = '{{"output":"{}","format":"JPG"}}'.format(file)
             command = "luna-send -n 1 luna://com.webos.surfacemanager/captureCompositorOutput '{}'".format(args)
         else:
