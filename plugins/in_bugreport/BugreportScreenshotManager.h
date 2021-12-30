@@ -1,4 +1,4 @@
-// Copyright (c) 2021 LG Electronics, Inc.
+// Copyright (c) 2021-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -39,21 +39,12 @@ public:
 
     string captureCompositorOutput();
     void removeScreenshots();
-    const list<string> getScreenshots() const;
+    bool getScreenshots(list<string>& screenshots) const;
     JValue toJson() const;
     string toString() const;
 
 private:
-    static void onDirChanged(GFileMonitor *monitor, GFile *file, GFile *other_file, GFileMonitorEvent event, gpointer user_data);
-
-    bool loadScreenshots();
-
     LunaHandle* m_lunaHandle;
-    list<string> m_screenshots;
-
-    GFile* m_dir;
-    GFileMonitor* m_dirMonitor;
-    int m_dirMonitorId;
 };
 
 #endif

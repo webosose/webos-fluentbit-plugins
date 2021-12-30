@@ -1,4 +1,4 @@
-// Copyright (c) 2021 LG Electronics, Inc.
+// Copyright (c) 2021-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,9 +27,6 @@
 
 BugreportScreenshotManager::BugreportScreenshotManager()
     : m_lunaHandle(NULL)
-    , m_dir(NULL)
-    , m_dirMonitor(NULL)
-    , m_dirMonitorId(0)
 {
     PLUGIN_INFO();
 }
@@ -44,33 +41,16 @@ bool BugreportScreenshotManager::initialize(LunaHandle* lunaHandle)
     PLUGIN_INFO("Screenshot dir : %s", DIR_SCREENSHOTS);
     m_lunaHandle = lunaHandle;
 
-    if (!loadScreenshots()) {
+    if (!File::createDir(DIR_SCREENSHOTS)) {
+        PLUGIN_ERROR("Failed to create dir : %s", DIR_SCREENSHOTS);
         return false;
     }
-    GError* error = NULL;
-    m_dir = g_file_new_for_path(DIR_SCREENSHOTS);
-    if (NULL == (m_dirMonitor = g_file_monitor(m_dir, G_FILE_MONITOR_NONE, NULL, &error))) {
-        g_object_unref(m_dir);
-        PLUGIN_ERROR("Failed in g_file_monitor : %s", error->message);
-        g_error_free(error);
-        return false;
-    }
-    m_dirMonitorId = g_signal_connect(m_dirMonitor,
-                                      "changed",
-                                      G_CALLBACK(BugreportScreenshotManager::onDirChanged),
-                                      this);
     return true;
 }
 
 bool BugreportScreenshotManager::finalize()
 {
     PLUGIN_INFO();
-    if (0 != m_dirMonitorId)
-        g_signal_handler_disconnect(m_dirMonitor, m_dirMonitorId);
-    if (NULL != m_dirMonitor)
-        g_object_unref(m_dirMonitor);
-    if (NULL != m_dir)
-        g_object_unref(m_dir);
     return true;
 }
 
@@ -112,25 +92,51 @@ string BugreportScreenshotManager::captureCompositorOutput()
 
 void BugreportScreenshotManager::removeScreenshots()
 {
-    for (string& screenshot : m_screenshots) {
-        if (0 == unlink(screenshot.c_str())) {
-            PLUGIN_INFO("Screenshot removed : %s", screenshot.c_str());
+    DIR* dir = opendir(DIR_SCREENSHOTS);
+    struct dirent* dirent;
+    while ((dirent = readdir(dir)) != NULL) {
+        if (strcmp(".", dirent->d_name) == 0)
+            continue;
+        if (strcmp("..", dirent->d_name) == 0)
+            continue;
+        string fullpath = File::join(DIR_SCREENSHOTS, dirent->d_name);
+        if (0 == unlink(fullpath.c_str())) {
+            PLUGIN_INFO("Screenshot removed : %s", fullpath.c_str());
         } else {
-            PLUGIN_WARN("Failed to remove %s : %s", screenshot.c_str(), strerror(errno));
+            PLUGIN_WARN("Failed to remove %s : %s", fullpath.c_str(), strerror(errno));
         }
     }
-    m_screenshots.clear();
+    closedir(dir);
 }
 
-const list<string> BugreportScreenshotManager::getScreenshots() const
+bool BugreportScreenshotManager::getScreenshots(list<string>& screenshots) const
 {
-    return m_screenshots;
+    PLUGIN_INFO();
+    list<string> filenames;
+    if (!File::createDir(DIR_SCREENSHOTS)) {
+        PLUGIN_ERROR("Failed to create dir : %s", DIR_SCREENSHOTS);
+        return false;
+    }
+    if (!File::listFiles(DIR_SCREENSHOTS, filenames)) {
+        PLUGIN_ERROR("Failed to read dir : %s", DIR_SCREENSHOTS);
+        return false;
+    }
+    for (string& filename : filenames) {
+        string fullpath = File::join(DIR_SCREENSHOTS, filename);
+        PLUGIN_DEBUG("Screenshot %s", fullpath.c_str());
+        screenshots.emplace_back(fullpath);
+    }
+    return true;
 }
 
 JValue BugreportScreenshotManager::toJson() const
 {
     JValue array = Array();
-    for (const string& screenshot : m_screenshots) {
+    list<string> screenshots;
+    if (!getScreenshots(screenshots)) {
+        return array;
+    }
+    for (const string& screenshot : screenshots) {
         array.append(screenshot);
     }
     return array;
@@ -139,46 +145,15 @@ JValue BugreportScreenshotManager::toJson() const
 string BugreportScreenshotManager::toString() const
 {
     string result = "";
-    for (const string& screenshot : m_screenshots) {
+    list<string> screenshots;
+    if (!getScreenshots(screenshots)) {
+        return result;
+    }
+    for (const string& screenshot : screenshots) {
         result += screenshot + " ";
     }
     if (!result.empty()) {
         result.pop_back();
     }
     return result;
-}
-
-void BugreportScreenshotManager::onDirChanged(GFileMonitor *monitor,
-                                              GFile *file,
-                                              GFile *other_file,
-                                              GFileMonitorEvent event,
-                                              gpointer user_data)
-{
-    BugreportScreenshotManager* self = (BugreportScreenshotManager*)user_data;
-    if (self == NULL) {
-        PLUGIN_ERROR("user_data is null");
-        return;
-    }
-    PLUGIN_INFO();
-    (void)self->loadScreenshots();
-}
-
-bool BugreportScreenshotManager::loadScreenshots()
-{
-    PLUGIN_INFO();
-    list<string> screenshots;
-    if (!File::createDir(DIR_SCREENSHOTS)) {
-        PLUGIN_ERROR("Failed to create dir : %s", DIR_SCREENSHOTS);
-        return false;
-    }
-    if (!File::listFiles(DIR_SCREENSHOTS, screenshots)) {
-        PLUGIN_ERROR("Failed to read dir : %s", DIR_SCREENSHOTS);
-        return false;
-    }
-    for (string& screenshot : screenshots) {
-        screenshot = File::join(DIR_SCREENSHOTS, screenshot);
-        PLUGIN_DEBUG("Screenshot %s", screenshot.c_str());
-    }
-    m_screenshots = screenshots;
-    return true;
 }
