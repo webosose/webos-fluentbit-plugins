@@ -48,6 +48,18 @@ class WebOSIssue:
             url=common.get_value('jira', 'url'),
             username=common.get_value('account', 'id'),
             password=pw)
+        # Verify password first, if the password is incorrect, the account is locked.
+        try:
+            self._jira.user(common.get_value('account', 'id'))
+        except requests.exceptions.HTTPError as ex:
+            if ex.response.status_code != 401:
+                return
+            WebOSUploader.instance().sync_config()
+            pw = Crypto.instance().decrypt(common.get_value('account', 'pw'))
+            self._jira = Jira(
+                url=common.get_value('jira', 'url'),
+                username=common.get_value('account', 'id'),
+                password=pw)
         return
 
     def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, unique_summary=False, components=[COMPONENT_TEMP]):
@@ -123,11 +135,7 @@ class WebOSIssue:
         if description is not None:
             fields['description'] = description
 
-        try:
-            self._jira.update_issue_field(key, fields)
-            return True
-        except:
-            return False
+        return self._jira.update_issue_field(key, fields)
 
     def find_open_issue(self, summary):
         summary = summary.replace("[","\\\\[")
@@ -323,10 +331,14 @@ if __name__ == "__main__":
 
     if key is not None:
         # handle 'UPDATE' mode
-        result = WebOSIssue.instance().update_issue(args.key, args.summary, args.description)
-        if result is False:
-            common.error("Failed to update '{}'".format(args.key))
+        try:
+            WebOSIssue.instance().update_issue(args.key, args.summary, args.description)
+        except Exception as ex:
+            common.error("{} : Failed to update '{}'".format(ex, args.key))
+            if ex.response and ex.response.status_code == 401:
+                exit(EXIT_STATUS_LOGIN_FAILED)
             exit(1)
+
     elif args.summary is not None:
         # handle 'CREATE' mode
         outdir = os.path.join(DEFAULT_OUTDIR, '0')
@@ -367,9 +379,12 @@ if __name__ == "__main__":
         try:
             result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.unique_summary, components)
         except Exception as ex:
-            common.error(ex.response.text)
+            error_text = ex.response.status_code if ex.response and ex.response.status_code else str(ex)
+            common.error('Failed to create ticket : {}'.format(error_text))
             if args.enable_popup:
-                WebOSIssue.instance().show_popup('Failed to create ticket : {}'.format(ex.response.status_code))
+                WebOSIssue.instance().show_popup('Failed to create ticket : {}'.format(error_text))
+            if error_text == 401:
+                exit(EXIT_STATUS_LOGIN_FAILED)
             raise ex
         if result is None or 'key' not in result:
             common.error("Failed to create new ticket")

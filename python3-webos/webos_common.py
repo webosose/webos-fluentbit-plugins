@@ -101,6 +101,9 @@ def sync_config(config):
     info('Write {}'.format(RDX_SYNC_JSON))
     with open(RDX_SYNC_JSON, 'w') as json_file:
         json_file.write(json.dumps(config, indent=4, sort_keys=True))
+    # Read downloaded config
+    update_configs(RDX_SYNC_JSON)
+    rw_configs = update_configs(RDX_JSON)
 
 
 if __name__ == "__main__":
