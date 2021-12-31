@@ -243,6 +243,13 @@ class WebOSIssue:
         result = Platform.instance().execute(command)
         common.info(result)
 
+    def close_issue(self, key):
+        status = self._jira.get_issue_status(key)
+        if 'Closed' == status:
+            return
+        if 'Verify' != status:
+            self._jira.set_issue_status(key, 'Verify')
+        self._jira.set_issue_status(key, 'Closed', fields={'resolution':{'name':'False Positive'}})
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=os.path.basename(__file__))
@@ -255,6 +262,7 @@ if __name__ == "__main__":
     parser.add_argument('--comment',          type=str, help='jira comment')
     parser.add_argument('--priority',         type=str, help='jira priority')
     parser.add_argument('--reproducibility',  type=str, help='jira reproducibility')
+    parser.add_argument('--close-issue',      type=str, help='jira key to close')
 
     parser.add_argument('--attach-files',     type=str, nargs='*', help='All files are attached into jira ticket')
     parser.add_argument('--upload-files',     type=str, nargs='*', help='All files are uploaded into file server')
@@ -317,6 +325,10 @@ if __name__ == "__main__":
     if args.get_project_components:
         WebOSIssue.instance().get_project_components()
         exit(1)
+
+    if args.close_issue:
+        WebOSIssue.instance().close_issue(args.close_issue)
+        exit(EXIT_STATUS_SUCCESS)
 
     key = args.key
     upload_files = args.upload_files
