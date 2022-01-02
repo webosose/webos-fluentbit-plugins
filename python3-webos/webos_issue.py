@@ -262,7 +262,6 @@ if __name__ == "__main__":
     parser.add_argument('--comment',          type=str, help='jira comment')
     parser.add_argument('--priority',         type=str, help='jira priority')
     parser.add_argument('--reproducibility',  type=str, help='jira reproducibility')
-    parser.add_argument('--close-issue',      type=str, help='jira key to close')
 
     parser.add_argument('--attach-files',     type=str, nargs='*', help='All files are attached into jira ticket')
     parser.add_argument('--upload-files',     type=str, nargs='*', help='All files are uploaded into file server')
@@ -277,6 +276,7 @@ if __name__ == "__main__":
     parser.add_argument('--attach-crashcounter', action='store_true', help='Attach crashcounter in description')
     parser.add_argument('--get-project-components', action='store_true', help='Show all components registered in project')
     parser.add_argument('--enable-popup',     action='store_true', help='Display the result in a pop-up')
+    parser.add_argument('--is-close',         action='store_true', help='Close issue with --key')
 
     args = parser.parse_args()
 
@@ -326,8 +326,8 @@ if __name__ == "__main__":
         WebOSIssue.instance().get_project_components()
         exit(1)
 
-    if args.close_issue:
-        WebOSIssue.instance().close_issue(args.close_issue)
+    if args.is_close and args.key:
+        WebOSIssue.instance().close_issue(args.key)
         exit(EXIT_STATUS_SUCCESS)
 
     key = args.key
@@ -420,6 +420,8 @@ if __name__ == "__main__":
 
     if args.enable_popup and key:
         WebOSIssue.instance().show_popup('Ticket created : ' + key)
+    # This is used when responding issue key in createBug
+    print('Ticket created : {}'.format(key))
 
     # delete outdir
     common.info('Deleting {}'.format(outdir))

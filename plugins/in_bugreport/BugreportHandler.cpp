@@ -1,4 +1,4 @@
-// Copyright (c) 2021 LG Electronics, Inc.
+// Copyright (c) 2021-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <functional>
 #include <linux/input.h>
+#include <list>
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -54,6 +55,8 @@
 #define KEYCODE_F10             68
 #define KEYCODE_F11             87
 #define KEYCODE_F12             88
+
+const char* TicketCreated = "Ticket created : ";
 
 extern "C" int initBugreportHandler(struct flb_input_instance *ins, struct flb_config *config, void *data)
 {
@@ -512,47 +515,68 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
     BugreportHandler* self = (BugreportHandler*)ctx;
     string summary, description, priority, reproducibility;
     JValue screenshots = Array();
-//    JValue components = Array();
-    string username, password;
-    JValue config = Object();
-    JValue payload = Object();
-    string payloadStr;
-    char* buffer;
+    string screenshotStr;
+    list<string> screenshotPaths;
     if (!JValueUtil::getValue(requestPayload, "summary", summary)) {
         PLUGIN_ERROR("summary is required");
         return sendResponse(request, ErrCode_INVALID_REQUEST_PARAMS);
     }
-    payload.put("summary", summary);
-    if (JValueUtil::getValue(requestPayload, "description", description)) {
-        payload.put("description", description);
-    } else {
-        payload.put("description", self->m_configManager.getDescription());
+    if (!JValueUtil::getValue(requestPayload, "description", description)) {
+        description = self->m_configManager.getDescription();
     }
-    if (JValueUtil::getValue(requestPayload, "priority", priority)) {
-        payload.put("priority", priority);
-    }
-    if (JValueUtil::getValue(requestPayload, "reproducibility", reproducibility)) {
-        payload.put("reproducibility", reproducibility);
-    }
+    (void) JValueUtil::getValue(requestPayload, "priority", priority);
+    (void) JValueUtil::getValue(requestPayload, "reproducibility", reproducibility);
     if (JValueUtil::getValue(requestPayload, "screenshots", screenshots) && screenshots.isArray()) {
-        string screenshotStr = "";
         for (const JValue& screenshot : screenshots.items()) {
             if (!screenshot.isString())
                 continue;
             screenshotStr += screenshot.asString() + " ";
+            screenshotPaths.emplace_back(screenshot.asString());
         }
         if (!screenshotStr.empty()) {
-            payload.put("upload-files", screenshotStr.erase(screenshotStr.length()-1));
+            screenshotStr.erase(screenshotStr.length()-1);
         }
     }
-//    if (JValueUtil::getValue(requestPayload, "components", components) && components.isArray()) {
-//        payload.put("components", components);
-//    }
-    if (!self->pushToRpaQueue(payload)) {
-        PLUGIN_ERROR("Failed in rpa_queue_push");
+
+    // TODO We need to pass data to output plugin. There are no output plugins at this time.
+
+    string command = "webos_issue.py --summary \'" + summary + "\' "
+                   + (description.empty() ? "" : "--description '" + description + "' ")
+                   + (priority.empty() ? "" : "--priority " + priority + " ")
+                   + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
+                   + "--enable-popup "
+                   + (screenshotStr.empty() ? "" : "--upload-files " + screenshotStr);
+    PLUGIN_INFO("%s", command.c_str());
+    FILE *fp = popen(command.c_str(), "r");
+    if (fp == NULL) {
+        PLUGIN_WARN("Failed to popen : %s", command.c_str());
         return sendResponse(request, ErrCode_INTERNAL_ERROR);
     }
-    return sendResponse(request, ErrCode_NONE);
+    string key;
+    char buff[1024];
+    while (fgets(buff, sizeof(buff), fp)) {
+        buff[strlen(buff)-1] = '\0';
+        PLUGIN_INFO("> %s", buff);
+        if (strncmp(buff, TicketCreated, strlen(TicketCreated)))
+            continue;
+        key = buff + strlen(TicketCreated);
+    }
+    int ret = pclose(fp);
+    if (WIFEXITED(ret) && WEXITSTATUS(ret) == 0) {
+        PLUGIN_INFO("Done");
+        for (const string& screenshotPath : screenshotPaths) {
+            if (-1 == unlink(screenshotPath.c_str())) {
+                PLUGIN_WARN("Failed to remove %s : %s", screenshotPath.c_str(), strerror(errno));
+                continue;
+            }
+            PLUGIN_INFO("Removed %s", screenshotPath.c_str());
+        }
+        JValue responsePayload = Object();
+        responsePayload.put("key", key);
+        return sendResponse(request, responsePayload.stringify());
+    }
+    PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
+    return sendResponse(request, ErrCode_INTERNAL_ERROR);
 }
 
 bool BugreportHandler::processDeprecatedMethod(LSHandle *sh, LSMessage *msg, void *ctx)
