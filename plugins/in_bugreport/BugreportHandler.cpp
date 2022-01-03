@@ -77,27 +77,6 @@ const LSMethod BugreportHandler::METHOD_TABLE[] = {
     { "getConfig",               BugreportHandler::getConfig, LUNA_METHOD_FLAGS_NONE },
     { "setConfig",               BugreportHandler::setConfig, LUNA_METHOD_FLAGS_NONE },
     { "createBug",               BugreportHandler::createBug, LUNA_METHOD_FLAGS_NONE },
-    { "disableCrashPopup",       BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "disableCrashReporting",   BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "doHeadlessBugReport",     BugreportHandler::doHeadlessBugReport, LUNA_METHOD_FLAGS_NONE },
-    { "enableCrashPopup",        BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "enableCrashReporting",    BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "fileBugReport",           BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "fileCrashReport",         BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "getBuildMaxAge",          BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "getBugReportingConfig",   BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "getCrashReportingJira",   BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "isCrashPopupEnabled",     BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "isCrashReportingEnabled", BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "prepareBugReport",        BugreportHandler::prepareBugReport, LUNA_METHOD_FLAGS_NONE },
-    { "removeCredential",        BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "resetScreenshots",        BugreportHandler::resetScreenshots, LUNA_METHOD_FLAGS_NONE },
-    { "setBuildMaxAge",          BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "setCrashReportingJira",   BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "signInToJira",            BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "signOutFromJira",         BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "storeCredential",         BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "takeScreenshot",          BugreportHandler::takeScreenshot, LUNA_METHOD_FLAGS_NONE },
     { nullptr, nullptr }
 };
 
@@ -589,58 +568,6 @@ bool BugreportHandler::processDeprecatedMethod(LSHandle *sh, LSMessage *msg, voi
     }
 
     return sendResponse(request, ErrCode_DEPRECATED_METHOD);
-}
-
-bool BugreportHandler::doHeadlessBugReport(LSHandle *sh, LSMessage *msg, void *ctx)
-{
-    ErrCode errCode = ErrCode_NONE;
-    Message request(msg);
-    JValue requestPayload = Object();
-    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
-        return sendResponse(request, errCode);
-    }
-
-    BugreportHandler* self = (BugreportHandler*)ctx;
-    return sendResponse(request, self->processF12());
-}
-
-bool BugreportHandler::prepareBugReport(LSHandle *sh, LSMessage *msg, void *ctx)
-{
-    ErrCode errCode = ErrCode_NONE;
-    Message request(msg);
-    JValue requestPayload = Object();
-    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
-        return sendResponse(request, errCode);
-    }
-
-    BugreportHandler* self = (BugreportHandler*)ctx;
-    return sendResponse(request, self->processF11());
-}
-
-bool BugreportHandler::resetScreenshots(LSHandle *sh, LSMessage *msg, void *ctx)
-{
-    ErrCode errCode = ErrCode_NONE;
-    Message request(msg);
-    JValue requestPayload = Object();
-    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
-        return sendResponse(request, errCode);
-    }
-
-    BugreportHandler* self = (BugreportHandler*)ctx;
-    return sendResponse(request, self->processF10());
-}
-
-bool BugreportHandler::takeScreenshot(LSHandle *sh, LSMessage *msg, void *ctx)
-{
-    ErrCode errCode = ErrCode_NONE;
-    Message request(msg);
-    JValue requestPayload = Object();
-    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
-        return sendResponse(request, errCode);
-    }
-
-    BugreportHandler* self = (BugreportHandler*)ctx;
-    return sendResponse(request, self->processF9());
 }
 
 ErrCode BugreportHandler::processF9()
