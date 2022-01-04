@@ -418,6 +418,10 @@ if __name__ == "__main__":
     if args.comment is not None:
         WebOSIssue.instance().add_comment(key, args.comment)
 
+    if args.key is not None:
+        # For ticket update, exit here.
+        exit(0)
+
     if args.enable_popup and key:
         WebOSIssue.instance().show_popup('Ticket created : ' + key)
     # This is used when responding issue key in createBug

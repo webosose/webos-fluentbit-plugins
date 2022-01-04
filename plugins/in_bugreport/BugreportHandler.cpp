@@ -519,11 +519,10 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
 
     // TODO We need to pass data to output plugin. There are no output plugins at this time.
 
-    string command = "webos_issue.py --summary \'" + summary + "\' "
+    string command = "webos_issue.py --enable-popup --summary \'" + summary + "\' "
                    + (description.empty() ? "" : "--description '" + description + "' ")
                    + (priority.empty() ? "" : "--priority " + priority + " ")
                    + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
-                   + "--enable-popup "
                    + (screenshotStr.empty() ? "" : "--upload-files " + screenshotStr);
     PLUGIN_INFO("%s", command.c_str());
     FILE *fp = popen(command.c_str(), "r");
@@ -556,18 +555,6 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
     }
     PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
     return sendResponse(request, ErrCode_INTERNAL_ERROR);
-}
-
-bool BugreportHandler::processDeprecatedMethod(LSHandle *sh, LSMessage *msg, void *ctx)
-{
-    ErrCode errCode = ErrCode_NONE;
-    Message request(msg);
-    JValue requestPayload = Object();
-    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
-        return sendResponse(request, errCode);
-    }
-
-    return sendResponse(request, ErrCode_DEPRECATED_METHOD);
 }
 
 ErrCode BugreportHandler::processF9()
