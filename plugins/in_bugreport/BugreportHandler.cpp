@@ -1,4 +1,4 @@
-// Copyright (c) 2021 LG Electronics, Inc.
+// Copyright (c) 2021-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <functional>
 #include <linux/input.h>
+#include <list>
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -55,6 +56,8 @@
 #define KEYCODE_F11             87
 #define KEYCODE_F12             88
 
+const char* TicketCreated = "Ticket created : ";
+
 extern "C" int initBugreportHandler(struct flb_input_instance *ins, struct flb_config *config, void *data)
 {
     return BugreportHandler::getInstance().onInit(ins, config, data);
@@ -74,27 +77,6 @@ const LSMethod BugreportHandler::METHOD_TABLE[] = {
     { "getConfig",               BugreportHandler::getConfig, LUNA_METHOD_FLAGS_NONE },
     { "setConfig",               BugreportHandler::setConfig, LUNA_METHOD_FLAGS_NONE },
     { "createBug",               BugreportHandler::createBug, LUNA_METHOD_FLAGS_NONE },
-    { "disableCrashPopup",       BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "disableCrashReporting",   BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "doHeadlessBugReport",     BugreportHandler::doHeadlessBugReport, LUNA_METHOD_FLAGS_NONE },
-    { "enableCrashPopup",        BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "enableCrashReporting",    BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "fileBugReport",           BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "fileCrashReport",         BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "getBuildMaxAge",          BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "getBugReportingConfig",   BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "getCrashReportingJira",   BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "isCrashPopupEnabled",     BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "isCrashReportingEnabled", BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "prepareBugReport",        BugreportHandler::prepareBugReport, LUNA_METHOD_FLAGS_NONE },
-    { "removeCredential",        BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "resetScreenshots",        BugreportHandler::resetScreenshots, LUNA_METHOD_FLAGS_NONE },
-    { "setBuildMaxAge",          BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "setCrashReportingJira",   BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "signInToJira",            BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "signOutFromJira",         BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "storeCredential",         BugreportHandler::processDeprecatedMethod, LUNA_METHOD_FLAGS_NONE },
-    { "takeScreenshot",          BugreportHandler::takeScreenshot, LUNA_METHOD_FLAGS_NONE },
     { nullptr, nullptr }
 };
 
@@ -512,111 +494,67 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
     BugreportHandler* self = (BugreportHandler*)ctx;
     string summary, description, priority, reproducibility;
     JValue screenshots = Array();
-//    JValue components = Array();
-    string username, password;
-    JValue config = Object();
-    JValue payload = Object();
-    string payloadStr;
-    char* buffer;
+    string screenshotStr;
+    list<string> screenshotPaths;
     if (!JValueUtil::getValue(requestPayload, "summary", summary)) {
         PLUGIN_ERROR("summary is required");
         return sendResponse(request, ErrCode_INVALID_REQUEST_PARAMS);
     }
-    payload.put("summary", summary);
-    if (JValueUtil::getValue(requestPayload, "description", description)) {
-        payload.put("description", description);
-    } else {
-        payload.put("description", self->m_configManager.getDescription());
+    if (!JValueUtil::getValue(requestPayload, "description", description)) {
+        description = self->m_configManager.getDescription();
     }
-    if (JValueUtil::getValue(requestPayload, "priority", priority)) {
-        payload.put("priority", priority);
-    }
-    if (JValueUtil::getValue(requestPayload, "reproducibility", reproducibility)) {
-        payload.put("reproducibility", reproducibility);
-    }
+    (void) JValueUtil::getValue(requestPayload, "priority", priority);
+    (void) JValueUtil::getValue(requestPayload, "reproducibility", reproducibility);
     if (JValueUtil::getValue(requestPayload, "screenshots", screenshots) && screenshots.isArray()) {
-        string screenshotStr = "";
         for (const JValue& screenshot : screenshots.items()) {
             if (!screenshot.isString())
                 continue;
             screenshotStr += screenshot.asString() + " ";
+            screenshotPaths.emplace_back(screenshot.asString());
         }
         if (!screenshotStr.empty()) {
-            payload.put("upload-files", screenshotStr.erase(screenshotStr.length()-1));
+            screenshotStr.erase(screenshotStr.length()-1);
         }
     }
-//    if (JValueUtil::getValue(requestPayload, "components", components) && components.isArray()) {
-//        payload.put("components", components);
-//    }
-    if (!self->pushToRpaQueue(payload)) {
-        PLUGIN_ERROR("Failed in rpa_queue_push");
+
+    // TODO We need to pass data to output plugin. There are no output plugins at this time.
+
+    string command = "webos_issue.py --enable-popup --summary \'" + summary + "\' "
+                   + (description.empty() ? "" : "--description '" + description + "' ")
+                   + (priority.empty() ? "" : "--priority " + priority + " ")
+                   + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
+                   + (screenshotStr.empty() ? "" : "--upload-files " + screenshotStr);
+    PLUGIN_INFO("%s", command.c_str());
+    FILE *fp = popen(command.c_str(), "r");
+    if (fp == NULL) {
+        PLUGIN_WARN("Failed to popen : %s", command.c_str());
         return sendResponse(request, ErrCode_INTERNAL_ERROR);
     }
-    return sendResponse(request, ErrCode_NONE);
-}
-
-bool BugreportHandler::processDeprecatedMethod(LSHandle *sh, LSMessage *msg, void *ctx)
-{
-    ErrCode errCode = ErrCode_NONE;
-    Message request(msg);
-    JValue requestPayload = Object();
-    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
-        return sendResponse(request, errCode);
+    string key;
+    char buff[1024];
+    while (fgets(buff, sizeof(buff), fp)) {
+        buff[strlen(buff)-1] = '\0';
+        PLUGIN_INFO("> %s", buff);
+        if (strncmp(buff, TicketCreated, strlen(TicketCreated)))
+            continue;
+        key = buff + strlen(TicketCreated);
     }
-
-    return sendResponse(request, ErrCode_DEPRECATED_METHOD);
-}
-
-bool BugreportHandler::doHeadlessBugReport(LSHandle *sh, LSMessage *msg, void *ctx)
-{
-    ErrCode errCode = ErrCode_NONE;
-    Message request(msg);
-    JValue requestPayload = Object();
-    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
-        return sendResponse(request, errCode);
+    int ret = pclose(fp);
+    if (WIFEXITED(ret) && WEXITSTATUS(ret) == 0) {
+        PLUGIN_INFO("Done");
+        for (const string& screenshotPath : screenshotPaths) {
+            if (-1 == unlink(screenshotPath.c_str())) {
+                PLUGIN_WARN("Failed to remove %s : %s", screenshotPath.c_str(), strerror(errno));
+                continue;
+            }
+            PLUGIN_INFO("Removed %s", screenshotPath.c_str());
+        }
+        JValue responsePayload = Object();
+        responsePayload.put("key", key);
+        return sendResponse(request, responsePayload.stringify());
     }
-
-    BugreportHandler* self = (BugreportHandler*)ctx;
-    return sendResponse(request, self->processF12());
-}
-
-bool BugreportHandler::prepareBugReport(LSHandle *sh, LSMessage *msg, void *ctx)
-{
-    ErrCode errCode = ErrCode_NONE;
-    Message request(msg);
-    JValue requestPayload = Object();
-    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
-        return sendResponse(request, errCode);
-    }
-
-    BugreportHandler* self = (BugreportHandler*)ctx;
-    return sendResponse(request, self->processF11());
-}
-
-bool BugreportHandler::resetScreenshots(LSHandle *sh, LSMessage *msg, void *ctx)
-{
-    ErrCode errCode = ErrCode_NONE;
-    Message request(msg);
-    JValue requestPayload = Object();
-    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
-        return sendResponse(request, errCode);
-    }
-
-    BugreportHandler* self = (BugreportHandler*)ctx;
-    return sendResponse(request, self->processF10());
-}
-
-bool BugreportHandler::takeScreenshot(LSHandle *sh, LSMessage *msg, void *ctx)
-{
-    ErrCode errCode = ErrCode_NONE;
-    Message request(msg);
-    JValue requestPayload = Object();
-    if (ErrCode_NONE != (errCode = parseRequest(request, requestPayload, ctx))) {
-        return sendResponse(request, errCode);
-    }
-
-    BugreportHandler* self = (BugreportHandler*)ctx;
-    return sendResponse(request, self->processF9());
+    PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
+    return sendResponse(request, ErrCode_INTERNAL_ERROR);
 }
 
 ErrCode BugreportHandler::processF9()

@@ -48,6 +48,18 @@ class WebOSIssue:
             url=common.get_value('jira', 'url'),
             username=common.get_value('account', 'id'),
             password=pw)
+        # Verify password first, if the password is incorrect, the account is locked.
+        try:
+            self._jira.user(common.get_value('account', 'id'))
+        except requests.exceptions.HTTPError as ex:
+            if ex.response.status_code != 401:
+                return
+            WebOSUploader.instance().sync_config()
+            pw = Crypto.instance().decrypt(common.get_value('account', 'pw'))
+            self._jira = Jira(
+                url=common.get_value('jira', 'url'),
+                username=common.get_value('account', 'id'),
+                password=pw)
         return
 
     def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, unique_summary=False, components=[COMPONENT_TEMP]):
@@ -123,11 +135,7 @@ class WebOSIssue:
         if description is not None:
             fields['description'] = description
 
-        try:
-            self._jira.update_issue_field(key, fields)
-            return True
-        except:
-            return False
+        return self._jira.update_issue_field(key, fields)
 
     def find_open_issue(self, summary):
         summary = summary.replace("[","\\\\[")
@@ -235,6 +243,13 @@ class WebOSIssue:
         result = Platform.instance().execute(command)
         common.info(result)
 
+    def close_issue(self, key):
+        status = self._jira.get_issue_status(key)
+        if 'Closed' == status:
+            return
+        if 'Verify' != status:
+            self._jira.set_issue_status(key, 'Verify')
+        self._jira.set_issue_status(key, 'Closed', fields={'resolution':{'name':'False Positive'}})
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=os.path.basename(__file__))
@@ -261,6 +276,7 @@ if __name__ == "__main__":
     parser.add_argument('--attach-crashcounter', action='store_true', help='Attach crashcounter in description')
     parser.add_argument('--get-project-components', action='store_true', help='Show all components registered in project')
     parser.add_argument('--enable-popup',     action='store_true', help='Display the result in a pop-up')
+    parser.add_argument('--is-close',         action='store_true', help='Close issue with --key')
 
     args = parser.parse_args()
 
@@ -310,6 +326,10 @@ if __name__ == "__main__":
         WebOSIssue.instance().get_project_components()
         exit(1)
 
+    if args.is_close and args.key:
+        WebOSIssue.instance().close_issue(args.key)
+        exit(EXIT_STATUS_SUCCESS)
+
     key = args.key
     upload_files = args.upload_files
     if upload_files is None:
@@ -323,10 +343,14 @@ if __name__ == "__main__":
 
     if key is not None:
         # handle 'UPDATE' mode
-        result = WebOSIssue.instance().update_issue(args.key, args.summary, args.description)
-        if result is False:
-            common.error("Failed to update '{}'".format(args.key))
+        try:
+            WebOSIssue.instance().update_issue(args.key, args.summary, args.description)
+        except Exception as ex:
+            common.error("{} : Failed to update '{}'".format(ex, args.key))
+            if ex.response and ex.response.status_code == 401:
+                exit(EXIT_STATUS_LOGIN_FAILED)
             exit(1)
+
     elif args.summary is not None:
         # handle 'CREATE' mode
         outdir = os.path.join(DEFAULT_OUTDIR, '0')
@@ -367,9 +391,12 @@ if __name__ == "__main__":
         try:
             result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.unique_summary, components)
         except Exception as ex:
-            common.error(ex.response.text)
+            error_text = ex.response.status_code if ex.response and ex.response.status_code else str(ex)
+            common.error('Failed to create ticket : {}'.format(error_text))
             if args.enable_popup:
-                WebOSIssue.instance().show_popup('Failed to create ticket : {}'.format(ex.response.status_code))
+                WebOSIssue.instance().show_popup('Failed to create ticket : {}'.format(error_text))
+            if error_text == 401:
+                exit(EXIT_STATUS_LOGIN_FAILED)
             raise ex
         if result is None or 'key' not in result:
             common.error("Failed to create new ticket")
@@ -391,8 +418,14 @@ if __name__ == "__main__":
     if args.comment is not None:
         WebOSIssue.instance().add_comment(key, args.comment)
 
+    if args.key is not None:
+        # For ticket update, exit here.
+        exit(0)
+
     if args.enable_popup and key:
         WebOSIssue.instance().show_popup('Ticket created : ' + key)
+    # This is used when responding issue key in createBug
+    print('Ticket created : {}'.format(key))
 
     # delete outdir
     common.info('Deleting {}'.format(outdir))
