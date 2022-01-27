@@ -551,6 +551,7 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
         }
         JValue responsePayload = Object();
         responsePayload.put("key", key);
+        responsePayload.put("returnValue", true);
         return sendResponse(request, responsePayload.stringify());
     }
     PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
