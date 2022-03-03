@@ -17,7 +17,7 @@ from webos_capture import WebOSCapture
 from webos_uploader import WebOSUploader
 
 
-COMPONENT_TEMP = 'Temp'
+COMPONENT_PM = 'PM'
 DEFAULT_OUTDIR = '/var/spool/jira'
 FILE_JOURNALD = 'messages.txt'
 FILE_SYSINFO = 'info.txt'
@@ -62,7 +62,7 @@ class WebOSIssue:
                 password=pw)
         return
 
-    def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, unique_summary=False, components=[COMPONENT_TEMP]):
+    def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, unique_summary=False, components=[COMPONENT_PM]):
         if summary is None and description is None:
             return None
 
@@ -123,7 +123,7 @@ class WebOSIssue:
         if command in relations:
             return relations[command]
         else:
-            return COMPONENT_TEMP
+            return COMPONENT_PM
 
     def update_issue(self, key, summary=None, description=None):
         if summary is None and description is None:
