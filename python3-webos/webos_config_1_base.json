@@ -22,6 +22,7 @@
         ],
         "files": [
             "/proc/cpuinfo",
+            "/proc/meminfo",
             "/proc/mounts",
             "/etc/version",
             "/sys/class/mmc_host/mmc0/mmc0:0001/manfid",
