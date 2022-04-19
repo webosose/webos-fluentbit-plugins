@@ -33,7 +33,12 @@
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <algorithm>
+#include <fstream>
+#include <list>
 #include <map>
+#include <sstream>
+#include <string>
 
 #ifndef FALSE
 #define FALSE   (0)
@@ -87,6 +92,24 @@ struct input_event_list {
     struct input_event_node *tail;
 };
 
+struct Device {
+    Device() {}
+    Device(int handler, int ev, const string& name) {
+        m_handler = handler;
+        m_ev = ev;
+        snprintf(m_name, sizeof(m_name), "%s", name.c_str());
+    }
+    Device(const string& handler, const string& ev, const string& name) {
+        m_handler = stoi(handler.substr(strlen("event")));
+        m_ev = stoi(ev, 0, 16);
+        snprintf(m_name, sizeof(m_name), "%s", name.c_str());
+    }
+
+    int m_handler = 0;
+    int m_ev = 0;
+    char m_name[40] = "";
+};
+
 /* The on-disk format assumes we'll have up to 256 (a char byte) devices listed here */
 static const char *devnames[] = {
         "/dev/input/event0",
@@ -99,7 +122,16 @@ static const char *devnames[] = {
         "/dev/input/event7",
         "/dev/input/event8",
         "/dev/input/event9",
-        "/dev/input/event10"
+        "/dev/input/event10",
+        "/dev/input/event11",
+        "/dev/input/event12",
+        "/dev/input/event13",
+        "/dev/input/event14",
+        "/dev/input/event15",
+        "/dev/input/event16",
+        "/dev/input/event17",
+        "/dev/input/event18",
+        "/dev/input/event19"
 };
 static const char dft_capture_path[] = "/tmp/input_capture.bin";
 static struct input_event_list ielist = {NULL, NULL};
@@ -108,6 +140,10 @@ static int fdev[ARRAY_SIZE(devnames)];
 static int capture_file = -1;
 static int playback_file = -1;
 static int verbose = 0;
+static Device empty;
+static list<Device> currentDevices; // from /proc/bus/input/devices
+static list<Device> captureDevices; // from captured file
+static int fdev2[ARRAY_SIZE(devnames)];
 
 static map<int, string> keyevent_map = {
         { KEY_RESERVED,     "RESERVED" },   // 0
@@ -223,9 +259,161 @@ static map<int, string> keyevent_map = {
         { 1199,             "CURSOR_OFF" },
 };
 
+//cat /proc/bus/input/devices
+//I: Bus=0003 Vendor=222a Produ..=011e Version=0110
+//N: Name="ILITEK Multi-Touch-V5100"
+//P: Phys=usb-0000:01:00.0-1.2/input0
+//S: Sysfs=/devices/platform/scb/fd500000.pcie/pci0000:00/0000:00:00.0/0000:01:00.0/usb1/1-1/1-1.2/1-1.2:1.0/0003:222A:011E.000B/input/input32
+//U: Uniq=
+//H: Handlers=mouse0 event0
+//B: PROP=2
+//B: EV=1b                                                  (0001 1011: SYN, KEY,      ABS, MSC)
+//B: KEY=400 0 0 0 0 0 0 0 0 0 0
+//B: ABS=2608000 3
+//B: MSC=20
+//
+//I: Bus=0003 Vendor=045e Produ..=0780 Version=0111
+//N: Name="Microsoft Comfort Curve Keyboard 3000"
+//P: Phys=usb-0000:01:00.0-1.4/input1
+//S: Sysfs=/devices/platform/scb/fd500000.pcie/pci0000:00/0000:00:00.0/0000:01:00.0/usb1/1-1/1-1.4/1-1.4:1.1/0003:045E:0780.0010/input/input39
+//U: Uniq=
+//H: Handlers=sysrq kbd event6
+//B: PROP=0
+//B: EV=120013                          (0001 0010 0000 0000 0001 0011: SYN, KEY,           MSC, LED, REP)
+//B: KEY=3f 301ff 0 0 0 0 483ffff 17aff32d bfd44446 0 0 1 130ff3 8b17c007 ffff7bfa d9415fff ffbeffdf ffefffff ffffffff fffffffe
+//B: REL=1040
+//B: ABS=1 0
+//B: MSC=10
+//
+//I: Bus=0003 Vendor=093a Produ..=2510 Version=0111
+//N: Name="PixArt USB Optical Mouse"
+//P: Phys=usb-0000:01:00.0-1.4/input0
+//S: Sysfs=/devices/platform/scb/fd500000.pcie/pci0000:00/0000:00:00.0/0000:01:00.0/usb1/1-1/1-1.4/1-1.4:1.0/0003:093A:2510.0013/input/input42
+//U: Uniq=
+//H: Handlers=mouse2 event5
+//B: PROP=0
+//B: EV=17                                                  (0001 0111: SYN, KEY, REL,      MSC)
+//B: KEY=70000 0 0 0 0 0 0 0 0
+//B: REL=903
+//B: MSC=10
+//
+//I: Bus=0003 Vendor=0001 Produ..=0001 Version=0004
+//N: Name="LGE RCU"
+//P: Phys=
+//S: Sysfs=/devices/virtual/input/input1
+//U: Uniq=
+//H: Handlers=sysrq kbd event1
+//B: PROP=0
+//B: EV=7                                                   (0000 0111: SYN, KEY, REL)
+//B: KEY=ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff fffffffe
+//B: REL=0
+//
+//I: Bus=0003 Vendor=0000 Produ..=0000 Version=0004
+//N: Name="LGE M-RCU - Builtin [0]"
+//P: Phys=
+//S: Sysfs=/devices/virtual/input/input3
+//U: Uniq=
+//H: Handlers=kbd mouse0 event3
+//B: PROP=0
+//B: EV=f                                                   (0000 1111: SYN, KEY, REL, ABS)
+//B: KEY=7f0350 fc00 0 0 60000007 cdffffff 80bee01f f0030004 88000000 40 0 7fffff ffffffff 20206003 e9081e28 0 0 0 0 0 0 0 0 0 0 1000 100fc000 2001440 0 0 70000 20000 2018000 4180 10801 9e1680 0 0 10000ffc
+//B: REL=100
+//B: ABS=3
+static bool parseProcBusInputDevices()
+{
+    ifstream devices("/proc/bus/input/devices");
+    if (!devices.is_open()) {
+        perror("Open /proc/bus/input/devices");
+        return false;
+    }
+
+    currentDevices.clear();
+    string line;
+    string handler;
+    string ev;
+    string name;
+    while (std::getline(devices, line)) {
+        if (line.length() == 0) { // line break: next device
+            if (!handler.empty() && !ev.empty() && !name.empty()) {
+                currentDevices.emplace_back(Device{handler, ev, name});
+                name.clear();
+                handler.clear();
+                ev.clear();
+            }
+            continue;
+        }
+        if (line.rfind("H: Handlers=", 0) == 0) {
+            stringstream handlers(line.substr(strlen("H: Handlers=")));
+            string token;
+            while (handlers >> token) {
+                if (token.rfind("event", 0) == 0) {
+                    handler = token;
+                    continue;
+                }
+            }
+        }
+        if (line.rfind("B: EV=", 0) == 0) {
+            ev = line.substr(strlen("B: EV="));
+            continue;
+        }
+        if (line.rfind("N: Name=", 0) == 0) {
+            name = line.substr(strlen("N: Name="));
+            continue;
+        }
+    }
+    if (!handler.empty() && !ev.empty() && !name.empty()) {
+        currentDevices.emplace_back(Device{handler, ev, name});
+    }
+    return true;
+}
+
+static bool writeDevicesInfo(int fd)
+{
+    if (write(fd, "[Devices]", strlen("[Devices]")) == -1) {
+        perror("Write [Devices]");
+        return false;
+    }
+    for (const Device& device : currentDevices) {
+        printf("Write %d %x %s\n", device.m_handler, device.m_ev, device.m_name);
+        if (write(fd, &device, sizeof(device)) == -1) {
+            perror("Write device");
+            return false;
+        }
+    }
+    if (write(fd, &empty, sizeof(empty)) == -1) {
+        printf("Write %d %x %s\n", empty.m_handler, empty.m_ev, empty.m_name);
+        return false;
+    }
+    if (write(fd, "[Events]", strlen("[Events]")) == -1) {
+        perror("Write [Events]");
+        return false;
+    }
+    return true;
+}
+
+static Device* findDevice(list<Device>& devices, Device& capturedDevice)
+{
+    // exactly same
+    auto it = find_if(devices.begin(), devices.end(), [&](Device& d) { return d.m_ev == capturedDevice.m_ev && strncmp(d.m_name, capturedDevice.m_name, strlen(d.m_name)) == 0; });
+    if (it != devices.end()) {
+        return &(*it);
+    }
+    // same ev
+    it = find_if(devices.begin(), devices.end(), [&](Device& d) { return d.m_ev == capturedDevice.m_ev; });
+    if (it != devices.end()) {
+        return &(*it);
+    }
+    // superset of ev
+    it = find_if(devices.begin(), devices.end(), [&](Device& d) { return (d.m_ev & capturedDevice.m_ev) == capturedDevice.m_ev; });
+    if (it != devices.end()) {
+        return &(*it);
+    }
+    return nullptr;
+}
+
 static void sig_finish_handler(int sig)
 {
-    should_exit = (sig == sig);
+    should_exit = true;
 }
 
 static void open_devices_or_abort(int device_mode)
@@ -555,7 +743,7 @@ static void exec_input_packet(struct record_format_payload *rec)
     } else {
         unsigned int idx = rec->idev;
         assert(idx < ARRAY_SIZE(devnames));
-        dest_fd = fdev[idx];
+        dest_fd = fdev2[idx]; // not fdev
     }
 
     if (TEMP_FAILURE_RETRY(write(dest_fd, &rec->ie, sizeof(rec->ie))) != sizeof(rec->ie))
@@ -586,6 +774,64 @@ static int read_input_packets_from_file(unsigned int capture_file_fd)
     return TRUE;
 }
 
+static int migration_mode(const char *capture_path)
+{
+    int ret = EXIT_SUCCESS;
+    unsigned char* contents = nullptr;
+    ssize_t nReadTotal = 0;
+    ssize_t nRead = 0;
+    off_t filesize = 0;
+    capture_file = open(capture_path, O_RDWR);
+    char buff[10] = { 0, };
+    if (capture_file == -1) {
+        perror("Open migration file");
+        ret = EXIT_FAILURE;
+        goto Exit;
+    }
+    if (read(capture_file, buff, strlen("[Devices]")) == strlen("[Devices]")) {
+        if (strncmp("[Devices]", buff, strlen("[Devices]")) == 0) {
+            printf("Already migrated\n");
+            goto Exit;
+        }
+    }
+
+    if ((filesize = lseek(capture_file, 0, SEEK_END)) == -1 || lseek(capture_file, 0, SEEK_SET) == -1) {
+        perror("Seek migration file");
+        ret = EXIT_FAILURE;
+        goto Exit;
+    }
+    contents = (unsigned char*)malloc(filesize);
+    while ((nRead = read(capture_file, contents+nReadTotal, filesize-nReadTotal)) > 0) {
+        nReadTotal += nRead;
+    }
+    if (nReadTotal != filesize) {
+        perror("Read migration file");
+        ret = EXIT_FAILURE;
+        goto Exit;
+    }
+    if (lseek(capture_file, 0, SEEK_SET) == -1) {
+        perror("Seek migration file");
+        ret = EXIT_FAILURE;
+        goto Exit;
+    }
+    if (!writeDevicesInfo(capture_file)) {
+        perror("Write devices info");
+        ret = EXIT_FAILURE;
+        goto Exit;
+    }
+    if (write(capture_file, contents, nReadTotal) != nReadTotal) {
+        perror("Write events");
+        ret = EXIT_FAILURE;
+        goto Exit;
+    }
+    if (capture_file != -1 && close(capture_file) != 0) {
+        perror("Close close_all_files capture_file");
+        ret = EXIT_FAILURE;
+    }
+Exit:
+    return ret;
+}
+
 static int playback_mode(const char *capture_path)
 {
     struct input_event_node *currptr;
@@ -596,6 +842,55 @@ static int playback_mode(const char *capture_path)
     open_workset_files_or_abort(capture_path, O_WRONLY | O_NONBLOCK, O_RDONLY);
 
     setup_termination_signals_or_abort();
+
+    // Read devices from captured file
+    char buff[10];
+    Device device;
+    ssize_t nRead = 0;
+    if (read(capture_file, buff, strlen("[Devices]")) == -1) {
+        perror("Read [Devices]");
+        ret = EXIT_FAILURE;
+        goto exit;
+    }
+    if (strncmp("[Devices]", buff, strlen("[Devices]")) != 0) {
+        fprintf(stderr, "Format [Devices] error\n");
+        ret = EXIT_FAILURE;
+        goto exit;
+    }
+    while ((nRead = read(capture_file, &device, sizeof(device))) > 0) {
+        if (device.m_handler == 0 && device.m_ev == 0 && strlen(device.m_name) == 0)
+            break;
+        captureDevices.push_back(device);
+    }
+    for (const Device& device : captureDevices) {
+        printf("Read %d %x %s\n", device.m_handler, device.m_ev, device.m_name);
+    }
+    for (const Device& device : currentDevices) {
+        printf("Curr %d %x %s\n", device.m_handler, device.m_ev, device.m_name);
+    }
+    if (read(capture_file, buff, strlen("[Events]")) == -1) {
+        perror("Read [Events]");
+        ret = EXIT_FAILURE;
+        goto exit;
+    }
+    if (strncmp("[Events]", buff, strlen("[Events]")) != 0) {
+        fprintf(stderr, "Format [Events] error\n");
+        ret = EXIT_FAILURE;
+        goto exit;
+    }
+    // mapping captured_device to current_device
+    for (Device& captured : captureDevices) {
+        Device* found = findDevice(currentDevices, captured);
+        if (found != nullptr) {
+            if (captured.m_handler != found->m_handler) {
+                printf("Mapp %d %x => %d %x %s\n", captured.m_handler, captured.m_ev, found->m_handler, found->m_ev, found->m_name);
+            }
+            fdev2[captured.m_handler] = fdev[found->m_handler];
+        } else {
+            printf("Mapp %d %x => Not found\n", captured.m_handler, captured.m_ev);
+            fdev2[captured.m_handler] = -1;
+        }
+    }
 
     if (!read_input_packets_from_file(capture_file)) {
         ret = EXIT_FAILURE;
@@ -678,6 +973,11 @@ static int capture_mode(const char *capture_path)
     }
 
     setup_termination_signals_or_abort();
+
+    if (!writeDevicesInfo(capture_file)) {
+        ret = EXIT_FAILURE;
+        goto exit;
+    }
 
     // Setup pselect parameters to listen to input devices plus signal interruptions
     sigemptyset(&sigmask);
@@ -790,10 +1090,15 @@ int main(int argc, char *argv[])
 
     printf("Mode %s, CapturePath %s\n", exec_mode, capture_path);
 
+    if (!parseProcBusInputDevices()) {
+        exit(EXIT_FAILURE);
+    }
     if (strncmp(exec_mode, "capture", sizeof("capture")) == 0) {
         exit(capture_mode(capture_path));
     } else if (strncmp(exec_mode, "playback", sizeof("playback")) == 0) {
         exit(playback_mode(capture_path));
+    } else if (strncmp(exec_mode, "migration", sizeof("migration")) == 0) {
+        exit(migration_mode(capture_path));
     }
     fprintf(stderr, "Invalid argument: %s\n", error_msg);
     exit(print_usage(argv[0]));
