@@ -227,13 +227,14 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
     int i;
 
     ctx->buf_start = 0;
-    ctx->buf_len = read(ctx->fd, ctx->buf, sizeof(ctx->buf) - 1);
-    if (ctx->buf_len <= 0) {
+    ssize_t nRead = read(ctx->fd, ctx->buf, sizeof(ctx->buf) - 1);
+    if (nRead <= 0) {
         PLUGIN_ERROR("Failed to read data");
         flb_input_collector_pause(ctx->coll_fd, ctx->ins);
         flb_engine_exit(config);
         return -1;
     }
+    ctx->buf_len = nRead;
     ctx->buf[ctx->buf_len] = '\0';
 
     PLUGIN_INFO("Catch the new coredump event");
@@ -243,7 +244,7 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     for (; ctx->buf_start + EVENT_SIZE < ctx->buf_len; ctx->buf_start += EVENT_SIZE + event->len) {
-        PLUGIN_DEBUG("while loop: buf_start=%d, buf_len=%d", ctx->buf_start, ctx->buf_len);
+        PLUGIN_DEBUG("while loop: buf_start=%u, buf_len=%u", ctx->buf_start, ctx->buf_len);
         event=(struct inotify_event*) &ctx->buf[ctx->buf_start];
 
         if (event->len == 0) {

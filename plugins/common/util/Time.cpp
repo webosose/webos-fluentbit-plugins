@@ -17,7 +17,6 @@
 #include "Time.h"
 
 #include <time.h>
-#include <chrono>
 
 #include <boost/lexical_cast.hpp>
 #include <boost/uuid/uuid.hpp>
@@ -42,8 +41,8 @@ Time::~Time()
 
 std::string Time::getCurrentTime(const char* format)
 {
-    auto now = std::chrono::system_clock::now();
-    auto timenow = std::chrono::system_clock::to_time_t(now);
+    time_t timenow;
+    time(&timenow);
 
     std::string timeStr(30, '\0');
     std::strftime(&timeStr[0], timeStr.size(), format, std::localtime(&timenow));
