@@ -394,7 +394,12 @@ static bool writeDevicesInfo(int fd)
 static Device* findDevice(list<Device>& devices, Device& capturedDevice)
 {
     // exactly same
-    auto it = find_if(devices.begin(), devices.end(), [&](Device& d) { return d.m_ev == capturedDevice.m_ev && strncmp(d.m_name, capturedDevice.m_name, strlen(d.m_name)) == 0; });
+    auto it = find_if(devices.begin(), devices.end(), [&](Device& d) { return d.m_handler == capturedDevice.m_handler && d.m_ev == capturedDevice.m_ev && strncmp(d.m_name, capturedDevice.m_name, strlen(d.m_name)) == 0; });
+    if (it != devices.end()) {
+        return &(*it);
+    }
+    // same name & ev
+    it = find_if(devices.begin(), devices.end(), [&](Device& d) { return d.m_ev == capturedDevice.m_ev && strncmp(d.m_name, capturedDevice.m_name, strlen(d.m_name)) == 0; });
     if (it != devices.end()) {
         return &(*it);
     }
@@ -824,11 +829,14 @@ static int migration_mode(const char *capture_path)
         ret = EXIT_FAILURE;
         goto Exit;
     }
+Exit:
+    if (contents != NULL) {
+        free(contents);
+    }
     if (capture_file != -1 && close(capture_file) != 0) {
         perror("Close close_all_files capture_file");
         ret = EXIT_FAILURE;
     }
-Exit:
     return ret;
 }
 
@@ -858,7 +866,7 @@ static int playback_mode(const char *capture_path)
         goto exit;
     }
     while ((nRead = read(capture_file, &device, sizeof(device))) > 0) {
-        if (device.m_handler == 0 && device.m_ev == 0 && strlen(device.m_name) == 0)
+        if (device.m_handler == 0 && device.m_ev == 0 /*&& strlen(device.m_name) == 0*/)
             break;
         captureDevices.push_back(device);
     }
