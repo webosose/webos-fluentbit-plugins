@@ -394,7 +394,12 @@ static bool writeDevicesInfo(int fd)
 static Device* findDevice(list<Device>& devices, Device& capturedDevice)
 {
     // exactly same
-    auto it = find_if(devices.begin(), devices.end(), [&](Device& d) { return d.m_ev == capturedDevice.m_ev && strncmp(d.m_name, capturedDevice.m_name, strlen(d.m_name)) == 0; });
+    auto it = find_if(devices.begin(), devices.end(), [&](Device& d) { return d.m_handler == capturedDevice.m_handler && d.m_ev == capturedDevice.m_ev && strncmp(d.m_name, capturedDevice.m_name, strlen(d.m_name)) == 0; });
+    if (it != devices.end()) {
+        return &(*it);
+    }
+    // same name & ev
+    it = find_if(devices.begin(), devices.end(), [&](Device& d) { return d.m_ev == capturedDevice.m_ev && strncmp(d.m_name, capturedDevice.m_name, strlen(d.m_name)) == 0; });
     if (it != devices.end()) {
         return &(*it);
     }
