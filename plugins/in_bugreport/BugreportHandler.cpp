@@ -375,7 +375,7 @@ void BugreportHandler::launchBugreportApp()
     LSErrorSafe lserror;
     if (!LSCallOneReply(LunaHandle::get(),
             "luna://com.webos.service.applicationmanager/launch",
-            "{\"id\":\"com.palm.app.bugreport\"}",
+            "{\"id\":\"com.webos.app.bugreport\"}",
             (LSFilterFunc)BugreportHandler::onLaunchBugreportApp,
             this,
             NULL,
