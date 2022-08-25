@@ -1,4 +1,4 @@
-// Copyright (c) 2021 LG Electronics, Inc.
+// Copyright (c) 2021-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -82,8 +82,7 @@ private:
     int checkOpkgChecksum();
     int checkExeTime(const char *exe);
     bool isExceptedExe(const char *exe);
-    int createCrashreport(const char *script, const char *corefile, const char *crashreport);
-    bool getCrashedFunction(const char* crashreport, char* func);
+    bool getCrashedFunction(const char *crashreport, const char *comm, char *func);
     void destroyCoredumpConfig(struct flb_in_coredump_config *ctx);
 
     struct time_information m_defaultTime;
@@ -91,6 +90,8 @@ private:
     string m_officialChecksum;
     list<string> m_exceptions;
     bool m_isNFSMode;
+    string m_workDir;
+    int m_maxEntries;
 };
 
 #endif

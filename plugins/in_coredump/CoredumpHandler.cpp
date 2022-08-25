@@ -1,4 +1,4 @@
-// Copyright (c) 2021 LG Electronics, Inc.
+// Copyright (c) 2021-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,26 +26,37 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/xattr.h>
+#include <vector>
 
 #include "Environment.h"
 #include "util/File.h"
 #include "util/Logger.h"
+#include "util/MSGPackUtil.h"
 #include "util/PluginConf.h"
 
 #define PATH_COREDUMP_DIRECTORY "/var/lib/systemd/coredump"
 #define PATH_OPKG_CEHCKSUM      "/var/luna/preferences/opkg_checksum"
 
-#define DEFAULT_SCRIPT          "webos_capture.py"
 #define DEFAULT_TIME_FILE       "/lib/systemd/systemd"
 
 #define KEY_SUMMARY             "summary"
-#define KEY_UPLOAD_FILES        "upload-files"
+#define KEY_COMM_PID            "comm.pid"
+#define KEY_COREDUMP            "coredump"
+#define KEY_CRASHREPORT         "crashreport"
+#define KEY_JOURNALS            "journals"
+#define KEY_MESSAGES            "messages"
+#define KEY_SCREENSHOT          "screenshot"
+#define KEY_SYSINFO             "sysinfo"
 
 #define STR_LEN                 1024
 
-#define CONF_FILE               "conf_file"
+#define PROPS_CONF_FILE         "conf_file"
+#define PROPS_EXCEPTIONS        "EXCEPTIONS"
 #define COREDUMP_WEBOS_CONF     "coredump_webos.conf"
-#define EXCEPTIONS              "EXCEPTIONS"
+#define PROPS_WORK_DIR          "work_dir"
+#define PATH_TMP_CRASH          "/tmp/crash"
+#define PROPS_MAX_ENTRIES       "max_entries"
+#define DEFAULT_MAX_ENTRIES     5
 
 extern "C" int initCoredumpHandler(struct flb_input_instance *ins, struct flb_config *config, void *data)
 {
@@ -62,8 +73,21 @@ extern "C" int collectCoredump(struct flb_input_instance *ins, struct flb_config
     return CoredumpHandler::getInstance().onCollect(ins, config, context);
 }
 
+vector<string> split(const string& str, char delim = '.')
+{
+    vector<string> v;
+    stringstream ss(str);
+    string token;
+    while (std::getline(ss, token, delim)) {
+        v.emplace_back(token);
+    }
+    return v;
+}
+
 CoredumpHandler::CoredumpHandler()
     : m_isNFSMode(false)
+    , m_workDir(PATH_TMP_CRASH)
+    , m_maxEntries(DEFAULT_MAX_ENTRIES)
 {
     PLUGIN_INFO();
     setClassName("CoredumpHandler");
@@ -92,7 +116,7 @@ int CoredumpHandler::onInit(struct flb_input_instance *ins, struct flb_config *c
     if (initDefaultTime() == -1) {
         PLUGIN_ERROR("Failed to initialize default time information");
     }
-    PLUGIN_INFO("Default (%s) file time information :  mtime (%d-%d-%d), ctime (%d-%d-%d) ", \
+    PLUGIN_INFO("Default (%s) file time information : mtime (%d-%d-%d), ctime (%d-%d-%d) ", \
             DEFAULT_TIME_FILE, \
             m_defaultTime.modify_year, m_defaultTime.modify_mon, m_defaultTime.modify_mday, \
             m_defaultTime.change_year, m_defaultTime.change_mon, m_defaultTime.change_mday);
@@ -133,15 +157,7 @@ int CoredumpHandler::onInit(struct flb_input_instance *ins, struct flb_config *c
         ctx->path = (char *)PATH_COREDUMP_DIRECTORY;
     PLUGIN_INFO("Monitoring coredump file path : %s", ctx->path);
 
-    // Set the crashreport script
-    pval = flb_input_get_property("script", ins);
-    if (pval)
-        ctx->crashreport_script = pval;
-    else
-        ctx->crashreport_script = DEFAULT_SCRIPT;
-    PLUGIN_INFO("Crashreport script : %s", ctx->crashreport_script);
-
-    pval = flb_input_get_property(CONF_FILE, ins);
+    pval = flb_input_get_property(PROPS_CONF_FILE, ins);
     if (pval) {
         if (pval[0] == '/')
             exceptionsFilePath = pval;
@@ -152,10 +168,35 @@ int CoredumpHandler::onInit(struct flb_input_instance *ins, struct flb_config *c
     }
     PLUGIN_INFO("Exceptions_File : %s", exceptionsFilePath.c_str());
     pluginConf.readConfFile(exceptionsFilePath.c_str());
-    for (const pair<string, string>& kv : pluginConf.getSection(EXCEPTIONS)) {
+    for (const pair<string, string>& kv : pluginConf.getSection(PROPS_EXCEPTIONS)) {
         if (strcasecmp(kv.first.c_str(), "path") == 0) {
             m_exceptions.push_back(kv.second);
         }
+    }
+
+    pval = flb_input_get_property(PROPS_WORK_DIR, ins);
+    if (pval) {
+        m_workDir = pval;
+    }
+    PLUGIN_INFO("Work_Dir : %s", m_workDir.c_str());
+    if (!File::createDir(m_workDir)) {
+        PLUGIN_ERROR("Failed to create Dir: %s", m_workDir.c_str());
+        return -1;
+    }
+
+    pval = flb_input_get_property(PROPS_MAX_ENTRIES, ins);
+    if (pval) {
+        try {
+            m_maxEntries = stoi(pval);
+        } catch (const exception& e) {
+            PLUGIN_WARN("Failed to get Max_Entries: %s", e.what());
+        }
+        if (m_maxEntries < 1) {
+            PLUGIN_WARN("Max_Entries : %d => 1. (Minimum)", m_maxEntries);
+            m_maxEntries = 1;
+        }
+    } else {
+        PLUGIN_INFO("Max_Entries : %d", m_maxEntries);
     }
 
     // Always initialize built-in JSON pack state
@@ -204,6 +245,8 @@ int CoredumpHandler::onExit(void *context, struct flb_config *config)
     return 0;
 }
 
+// According to my test, this function is called once per crash.
+// That is, this is called multiple times, if multi processes are crashed.
 int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config *config, void *context)
 {
     struct flb_in_coredump_config *ctx = (flb_in_coredump_config *)context;
@@ -212,12 +255,9 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
 
-    char full_path[STR_LEN];
     char comm[STR_LEN];
     char pid[STR_LEN];
     char exe[STR_LEN];
-    char corefile[STR_LEN];
-    char crashreport[STR_LEN];
     char crashed_func[STR_LEN];
     char upload_files[STR_LEN];
     char summary[STR_LEN];
@@ -259,19 +299,106 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
             continue;
         }
 
-        snprintf(full_path, STR_LEN, "%s/%s", ctx->path, event->name);
-        PLUGIN_INFO("New file is created : (%s)", full_path);
-        strncpy(corefile, event->name, strlen(event->name));
-
+        string coredumpFilename = event->name;
+        string coredumpFullpath = File::join(ctx->path, coredumpFilename);
+        PLUGIN_INFO("New file is created : (%s)", coredumpFullpath.c_str());
         // Guarantee coredump file closing time
         sleep(1);
 
-        if (verifyCoredumpFile(event->name) == -1) {
+        if (verifyCoredumpFile(coredumpFilename.c_str()) == -1) {
             PLUGIN_ERROR("Not coredump file");
             continue;
         }
 
-        if (parseCoredumpComm(full_path, comm, pid, exe) == -1) {
+        list<string> crashEntries;
+        if (!File::listFiles(m_workDir, crashEntries)) {
+            PLUGIN_WARN("Cannot list files in %s", m_workDir.c_str());
+        }
+        for (string& crashEntry : crashEntries) {
+            crashEntry = File::join(m_workDir, crashEntry);
+        }
+        if (crashEntries.size() >= m_maxEntries) {
+            crashEntries.sort(File::compareWithCtime);
+            for (const string& crashEntry : crashEntries) {
+                struct stat attr;
+                stat(crashEntry.c_str(), &attr);
+                PLUGIN_INFO("ctime: (%ld), m_time: (%ld), entry: (%s)", attr.st_ctime, attr.st_mtime, crashEntry.c_str());
+            }
+            for (size_t i = crashEntries.size(); i >= m_maxEntries; i--) {
+                const string& outdated = crashEntries.front();
+                PLUGIN_INFO("Remove outdated %s", outdated.c_str());
+                if (!File::removeDir(outdated)) {
+                    PLUGIN_WARN("Failed to remove %s", outdated.c_str());
+                }
+                crashEntries.pop_front();
+            }
+        }
+
+        vector<string> splitted = split(coredumpFilename, '.');
+        if (splitted.size() != 7) {
+            // core.<comm>.<uid>.<bootid>.<pid>.<timestamp>.zst
+            PLUGIN_ERROR("Filename format error: %s", coredumpFilename.c_str());
+            continue;
+        }
+        string commPid = splitted[1] + "." + splitted[4];
+        string crashdir = File::join(m_workDir, commPid);
+        if (!File::createDir(crashdir)) {
+            PLUGIN_ERROR("Failed to create dir: %s: %s", crashdir.c_str(), strerror(errno));
+            continue;
+        }
+
+        size_t extPos = coredumpFilename.find_last_of('.');
+        string crashreportFilename = coredumpFilename.substr(0, extPos) + "-crashreport.txt";
+        string crashreportFullpath = File::join(crashdir, crashreportFilename);
+        string journalsFullpath = File::join(crashdir, "journals.txt");
+        string messagesFullpath = File::join(crashdir, "messages.tgz");
+        string screenshotFullpath = File::join(crashdir, "screenshot.jpg");
+        string sysinfoFullpath = File::join(crashdir, "info.txt");
+        // Generate sysinfo, screenshot
+        string command = string("webos_capture.py")
+                       + " --screenshot " + screenshotFullpath
+                       + " --messages " + messagesFullpath
+                       + " --sysinfo " + sysinfoFullpath;
+        if ((access("/run/systemd/journal/socket", F_OK) == 0)) {
+            // Generate crashreport and journals for ose
+            // corefile : core.coreexam_exampl.0.c7294e397ec747f98552c7c459f7dc1c.2434.1619053570000000.xz
+            // crashreport : corefile-crashreport.txt
+            // command : webos_capture.py --coredump corefile crashreport
+            command += " --journald " + journalsFullpath;
+            command += " --coredump \'" + coredumpFilename + "\' " + crashreportFullpath;
+        } else {
+            // crashreport is also generted when the coredump is generated by systemd-coredump patch.
+            // even if we configure 'Storage=none' (do not store coredump) in /etc/systemd/coredump.conf
+            string tmpCrashreport = File::join("/tmp", crashreportFilename);
+            ifstream infile(tmpCrashreport.c_str());
+            ofstream outfile(File::join(crashdir, crashreportFilename).c_str());
+            outfile << infile.rdbuf();
+            if (outfile) {
+                (void) unlink(tmpCrashreport.c_str());
+            } else {
+                PLUGIN_ERROR("Failed to copy crashreport: %s", strerror(errno));
+                continue;
+            }
+        }
+        PLUGIN_INFO("command : %s", command.c_str());
+        int rc = system(command.c_str());
+        if (rc == -1) {
+            PLUGIN_ERROR("Failed to fork: %s: %s", command.c_str(), strerror(errno));
+            continue;
+        } else if (WEXITSTATUS(rc)) {
+            PLUGIN_ERROR("Failed to capture screenshot. (%d)", WEXITSTATUS(rc));
+            continue;
+        }
+
+        if (access(crashreportFullpath.c_str(), F_OK) != 0) {
+            continue;
+        }
+        PLUGIN_INFO("The crashreport file is created : %s)", crashreportFullpath.c_str());
+        // Guarantee crashreport file closing time
+        sleep(1);
+
+
+        if (parseCoredumpComm(coredumpFullpath.c_str(), comm, pid, exe) == -1) {
             PLUGIN_ERROR("Fail to parse coredump file");
             continue;
         }
@@ -297,53 +424,45 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
             continue;
         }
 
-        if ((access("/run/systemd/journal/socket", F_OK) == 0)) {
-            // For consistency, change the crash report path to /tmp.
-            snprintf(crashreport, sizeof(crashreport), "%s/%s-crashreport.txt", "/tmp", event->name);
-            createCrashreport(ctx->crashreport_script, event->name, crashreport);
-        } else {
-            string filename = event->name;
-            size_t extPos = filename.find_last_of('.');
-            snprintf(crashreport, sizeof(crashreport), "/tmp/%s-crashreport.txt", filename.substr(0, extPos).c_str());
-        }
-
-        if (access(crashreport, F_OK) != 0) {
-            PLUGIN_ERROR("Failed to create crashreport : %s", crashreport);
-            continue;
-        }
-        PLUGIN_INFO("The crashreport file is created : %s)", crashreport);
-
-        // Guarantee crashreport file closing time
-        sleep(1);
-
-        if (!getCrashedFunction(crashreport, crashed_func)) {
+        if (!getCrashedFunction(crashreportFullpath.c_str(), comm, crashed_func)) {
             PLUGIN_WARN("Failed to find crashed function");
             crashed_func[0] = '\0';
         }
 
-        snprintf(upload_files, STR_LEN, "\'%s\' %s", full_path, crashreport);
+        snprintf(upload_files, STR_LEN, "\'%s\' %s", coredumpFullpath.c_str(), crashreportFullpath.c_str());
 
         msgpack_pack_array(&mp_pck, 2); // time | value
         flb_pack_time_now(&mp_pck);
 
-        // 2 pairs
-        msgpack_pack_map(&mp_pck, 2);
-
-        // key : upload-files | value : coredump file path & crashreport path
-        msgpack_pack_str(&mp_pck, len=strlen(KEY_UPLOAD_FILES));
-        msgpack_pack_str_body(&mp_pck, KEY_UPLOAD_FILES, len);
-        msgpack_pack_str(&mp_pck, len=strlen(upload_files));
-        msgpack_pack_str_body(&mp_pck, upload_files, len);
-        PLUGIN_INFO("Add msgpack - key (%s) : val (%s)", KEY_UPLOAD_FILES, upload_files);
+        // 5~8 pairs
+        int childrenSize = 5;
+        if (access(coredumpFullpath.c_str(), F_OK) == 0)
+            childrenSize++;
+        if (access(messagesFullpath.c_str(), F_OK) == 0)
+            childrenSize++;
+        if (access(journalsFullpath.c_str(), F_OK) == 0)
+            childrenSize++;
+        msgpack_pack_map(&mp_pck, childrenSize);
 
         // key : summary | value : [RDX_CRASH][distro] comm
         msgpack_pack_str(&mp_pck, len=strlen(KEY_SUMMARY));
         msgpack_pack_str_body(&mp_pck, KEY_SUMMARY, len);
-
         snprintf(summary, STR_LEN, "[RDX_CRASH][%s] %s %s", m_distroResult.c_str(), exe, crashed_func);
         msgpack_pack_str(&mp_pck, len=strlen(summary));
         msgpack_pack_str_body(&mp_pck, summary, len);
         PLUGIN_INFO("Add msgpack - key (%s) : val (%s)", KEY_SUMMARY, summary);
+
+        // com.pid, coredump, crashreport, journals, messages, screenshot and sysinfo.
+        MSGPackUtil::putValue(&mp_pck, KEY_COMM_PID, commPid);
+        if (access(coredumpFullpath.c_str(), F_OK) == 0)
+            MSGPackUtil::putValue(&mp_pck, KEY_COREDUMP, coredumpFullpath);
+        MSGPackUtil::putValue(&mp_pck, KEY_CRASHREPORT, crashreportFullpath);
+        if (access(journalsFullpath.c_str(), F_OK) == 0)
+            MSGPackUtil::putValue(&mp_pck, KEY_JOURNALS, journalsFullpath);
+        if (access(messagesFullpath.c_str(), F_OK) == 0)
+            MSGPackUtil::putValue(&mp_pck, KEY_MESSAGES, messagesFullpath);
+        MSGPackUtil::putValue(&mp_pck, KEY_SCREENSHOT, screenshotFullpath);
+        MSGPackUtil::putValue(&mp_pck, KEY_SYSINFO, sysinfoFullpath);
     }
 
     // flush to fluentbit
@@ -632,23 +751,22 @@ bool CoredumpHandler::isExceptedExe(const char *exe)
     return false;
 }
 
-int CoredumpHandler::createCrashreport(const char *script, const char *corefile, const char *crashreport)
+bool CoredumpHandler::getCrashedFunction(const char *crashreport, const char *comm, char *func)
 {
-    // corefile : core.coreexam_exampl.0.c7294e397ec747f98552c7c459f7dc1c.2434.1619053570000000.xz
-    // crashreport : corefile-crashreport.txt
-    // command : webos_capture.py --coredump corefile crashreport
+    // A crashreport contains the following stacktrace.
+    // The first line here isn't really helpful: __libc_do_syscall (libc.so.6 + 0x1ade6)
+    // So here try to fina a meaningful line: _Z5funcCv (coredump_example + 0xb6e)
+    // ...
+    // Found module coredump_example with build-id: 331c2591ed23996f271990c41f3775874eff0ba7
+    // Stack trace of thread 13609:
+    //   #0  0x00000000f7508de6 __libc_do_syscall (libc.so.6 + 0x1ade6)
+    //   #1  0x00000000f7517416 __libc_signal_restore_set (libc.so.6 + 0x29416)
+    //   #2  0x00000000f7508922 __GI_abort (libc.so.6 + 0x1a922)
+    //   #3  0x00000000f753e834 __libc_message (libc.so.6 + 0x50834)
+    //   #4  0x00000000f7543606 malloc_printerr (libc.so.6 + 0x55606)
+    //   #5  0x00000000f7544bd2 _int_free (libc.so.6 + 0x56bd2)
+    //   #6  0x0000000000508b6e _Z5funcCv (coredump_example + 0xb6e)
 
-    char command[STR_LEN];
-    snprintf(command, sizeof(command), "%s --coredump \'%s\' %s", script, corefile, crashreport);
-    PLUGIN_INFO("command : %s", command);
-
-    int ret = system(command);
-
-    return 0;
-}
-
-bool CoredumpHandler::getCrashedFunction(const char* crashreport, char* func)
-{
     std::ifstream contents(crashreport);
     if (!contents) {
         PLUGIN_ERROR("File open error %s (%d)", crashreport, errno);
@@ -656,25 +774,41 @@ bool CoredumpHandler::getCrashedFunction(const char* crashreport, char* func)
     }
     string line;
     smatch match;
+    bool matched = false;
     while (getline(contents, line)) {
+        PLUGIN_DEBUG(" < %s", line.c_str());
         if (string::npos == line.find("Stack trace of thread"))
             continue;
-        getline(contents, line);
-        PLUGIN_INFO("Stacktrace : %s", line.c_str());
-        // #0  0x0000000000487ba4 _Z5funcCv (coredump_example + 0xba4)
-        // #0  0x00000000b6cb3c26 n/a (libc.so.6 + 0x1ac26)
-        if (!regex_match(line, match, regex("\\s*#0\\s+0x([0-9a-zA-Z]+)\\s+([[:print:]]+)"))) {
-            PLUGIN_DEBUG("Not matched");
-        }
         break;
     }
-    if (!match.ready() || match.size() != 3) {
-        PLUGIN_ERROR("Cannot find stack trace.");
-        return false;
+    while (getline(contents, line)) {
+        // #0  0x0000000000487ba4 _Z5funcCv (coredump_example + 0xba4)
+        // #0  0x00000000b6cb3c26 n/a (libc.so.6 + 0x1ac26)
+        // #0  0x00000000f7508de6 __libc_do_syscall (libc.so.6 + 0x1ade6)
+        // [:graph:] = letters, digits, and punctuation
+        // [:print:] = [:graph:] and space
+        if (!regex_match(line, match, regex("\\s*#([0-9]+)\\s+0x[0-9a-zA-Z]+\\s+([[:graph:]]+)\\s+([[:print:]]+)"))) {
+            PLUGIN_INFO("Not matched: %s", line.c_str());
+            continue;
+        }
+        // string(match[3]) : (coredmp_example + 0xba4)
+        // string(match[2]) : _Z5funcCv
+        // Summary: /usr/bin/coredump_example 'in _Z5funcCv (coredmp_example + 0xba4)'
+        if (match.ready() && match.size() == 4) {
+            if (string(match[1]).find("0") == 0) {
+                PLUGIN_INFO("Matched with #0  : (%s)", string(match[0]).c_str());
+                snprintf(func, STR_LEN, "in %s", string(match[2]).c_str(), string(match[3]).c_str());
+                matched = true;
+            }
+            if (string(match[3]).find(comm, 1) == 1) {
+                PLUGIN_INFO("Matched with comm: (%s)", string(match[0]).c_str());
+                snprintf(func, STR_LEN, "in %s %s", string(match[2]).c_str(), string(match[3]).c_str());
+                matched = true;
+                break;
+            }
+        }
     }
-    // summary: /usr/bin/coredump_example in _Z5funcCv (coredmp_example + 0xba4)
-    snprintf(func, STR_LEN, "in %s", string(match[2]).c_str());
-    return true;
+    return matched;
 }
 
 void CoredumpHandler::destroyCoredumpConfig(struct flb_in_coredump_config *ctx)
