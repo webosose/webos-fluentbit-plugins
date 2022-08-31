@@ -14,8 +14,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef COREDUMPHANDLER_H_
-#define COREDUMPHANDLER_H_
+#ifndef IN_CRASHINFOHANDLER_H_
+#define IN_CRASHINFOHANDLER_H_
 
 #include <string>
 #include <sys/inotify.h>
@@ -49,18 +49,18 @@ struct flb_in_coredump_config {
     const char *crashreport_script;
 };
 
-class CoredumpHandler : public IClassName,
-                        public ISingleton<CoredumpHandler> {
-friend class ISingleton<CoredumpHandler>;
+class InCrashinfoHandler : public IClassName,
+                           public ISingleton<InCrashinfoHandler> {
+friend class ISingleton<InCrashinfoHandler>;
 public:
-    virtual ~CoredumpHandler();
+    virtual ~InCrashinfoHandler();
 
     int onInit(struct flb_input_instance *ins, struct flb_config *config, void *data);
     int onExit(void *context, struct flb_config *config);
     int onCollect(struct flb_input_instance *ins, struct flb_config *config, void *context);
 
 private:
-    CoredumpHandler();
+    InCrashinfoHandler();
 
     void initDistroInfo();
     int verifyCoredumpFile(const char *corefile);

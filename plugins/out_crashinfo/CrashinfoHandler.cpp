@@ -24,49 +24,49 @@
 #include "util/MSGPackUtil.h"
 #include "util/Logger.h"
 
-#define KEY_COMM_PID            "comm.pid"
-#define KEY_COREDUMP            "coredump"
-#define KEY_CRASHREPORT         "crashreport"
-#define KEY_JOURNALS            "journals"
-#define KEY_MESSAGES            "messages"
-#define KEY_SCREENSHOT          "screenshot"
-#define KEY_SYSINFO             "sysinfo"
+#define KEY_COMM_PID                "comm.pid"
+#define KEY_COREDUMP                "coredump"
+#define KEY_CRASHREPORT             "crashreport"
+#define KEY_JOURNALS                "journals"
+#define KEY_MESSAGES                "messages"
+#define KEY_SCREENSHOT              "screenshot"
+#define KEY_SYSINFO                 "sysinfo"
 
-#define PROPS_WORK_DIR          "work_dir"
-#define PATH_VAR_SPOOL_CRASH    "/var/spool/crash"
-#define PROPS_MAX_ENTRIES       "max_entries"
-#define DEFAULT_MAX_ENTRIES     5
+#define PROPS_WORK_DIR              "work_dir"
+#define PATH_VAR_SPOOL_CRASHINFO    "/var/spool/crashinfo"
+#define PROPS_MAX_ENTRIES           "max_entries"
+#define DEFAULT_MAX_ENTRIES         5
 
 
-extern "C" int initCrashinfoHandler(struct flb_output_instance *ins, struct flb_config *config, void *data)
+extern "C" int initOutCrashinfoHandler(struct flb_output_instance *ins, struct flb_config *config, void *data)
 {
-    return CrashinfoHandler::getInstance().onInit(ins, config, data);
+    return OutCrashinfoHandler::getInstance().onInit(ins, config, data);
 }
 
-extern "C" int exitCrashinfoHandler(void *data, struct flb_config *config)
+extern "C" int exitOutCrashinfoHandler(void *data, struct flb_config *config)
 {
-    return CrashinfoHandler::getInstance().onExit(data, config);
+    return OutCrashinfoHandler::getInstance().onExit(data, config);
 }
 
-extern "C" void flushCrashinfo(const void *data, size_t bytes, const char *tag, int tag_len, struct flb_input_instance *ins, void *context, struct flb_config *config)
+extern "C" void flushOutCrashinfo(const void *data, size_t bytes, const char *tag, int tag_len, struct flb_input_instance *ins, void *context, struct flb_config *config)
 {
-    CrashinfoHandler::getInstance().onFlush(data, bytes, tag, tag_len, ins, context, config);
+    OutCrashinfoHandler::getInstance().onFlush(data, bytes, tag, tag_len, ins, context, config);
 }
 
-CrashinfoHandler::CrashinfoHandler()
-    : m_workDir(PATH_VAR_SPOOL_CRASH)
+OutCrashinfoHandler::OutCrashinfoHandler()
+    : m_workDir(PATH_VAR_SPOOL_CRASHINFO)
     , m_maxEntries(DEFAULT_MAX_ENTRIES)
 {
     PLUGIN_INFO();
-    setClassName("CrashinfoHandler");
+    setClassName("OutCrashinfoHandler");
 }
 
-CrashinfoHandler::~CrashinfoHandler()
+OutCrashinfoHandler::~OutCrashinfoHandler()
 {
     PLUGIN_INFO();
 }
 
-int CrashinfoHandler::onInit(struct flb_output_instance *ins, struct flb_config *config, void *data)
+int OutCrashinfoHandler::onInit(struct flb_output_instance *ins, struct flb_config *config, void *data)
 {
     PLUGIN_INFO();
 
@@ -105,14 +105,14 @@ int CrashinfoHandler::onInit(struct flb_output_instance *ins, struct flb_config 
     return 0;
 }
 
-int CrashinfoHandler::onExit(void *data, struct flb_config *config)
+int OutCrashinfoHandler::onExit(void *data, struct flb_config *config)
 {
     PLUGIN_INFO();
 
     return 0;
 }
 
-void CrashinfoHandler::onFlush(const void *data, size_t bytes, const char *tag, int tag_len, struct flb_input_instance *ins, void *context, struct flb_config *config)
+void OutCrashinfoHandler::onFlush(const void *data, size_t bytes, const char *tag, int tag_len, struct flb_input_instance *ins, void *context, struct flb_config *config)
 {
     PLUGIN_INFO();
 

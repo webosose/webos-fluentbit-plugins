@@ -20,24 +20,24 @@
 
 static int cb_crashinfo_init(struct flb_output_instance *ins, struct flb_config *config, void *data)
 {
-    setLogContext(ins->log_level, ins->p->name);
+    setLogContext(ins->log_level, ins->p->description);
 
-    return initCrashinfoHandler(ins, config, data);
+    return initOutCrashinfoHandler(ins, config, data);
 }
 
 static void cb_crashinfo_flush(const void *data, size_t bytes, const char *tag, int tag_len, struct flb_input_instance *ins, void *context, struct flb_config *config)
 {
-    flushCrashinfo(data, bytes, tag, tag_len, ins, context, config);
+    flushOutCrashinfo(data, bytes, tag, tag_len, ins, context, config);
 }
 
 static int cb_crashinfo_exit(void *data, struct flb_config *config)
 {
-    return exitCrashinfoHandler(data, config);
+    return exitOutCrashinfoHandler(data, config);
 }
 
 struct flb_output_plugin out_crashinfo_plugin = {
     .name         = "crashinfo",
-    .description  = "Zip crash info",
+    .description  = "crashinfo.out",
     .cb_init      = cb_crashinfo_init,
     .cb_flush     = cb_crashinfo_flush,
     .cb_exit      = cb_crashinfo_exit,

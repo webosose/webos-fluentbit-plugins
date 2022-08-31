@@ -14,7 +14,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#include "CoredumpHandler.h"
+#include "CrashinfoHandler.h"
 
 #include <fcntl.h>
 #include <fstream>
@@ -48,23 +48,23 @@
 #define STR_LEN                 1024
 
 #define PROPS_WORK_DIR          "work_dir"
-#define PATH_TMP_CRASH          "/tmp/crash"
+#define PATH_TMP_CRASHINFO      "/tmp/crashinfo"
 #define PROPS_MAX_ENTRIES       "max_entries"
 #define DEFAULT_MAX_ENTRIES     5
 
-extern "C" int initCoredumpHandler(struct flb_input_instance *ins, struct flb_config *config, void *data)
+extern "C" int initInCrashinfoHandler(struct flb_input_instance *ins, struct flb_config *config, void *data)
 {
-    return CoredumpHandler::getInstance().onInit(ins, config, data);
+    return InCrashinfoHandler::getInstance().onInit(ins, config, data);
 }
 
-extern "C" int exitCoredumpHandler(void *context, struct flb_config *config)
+extern "C" int exitInCrashinfoHandler(void *context, struct flb_config *config)
 {
-    return CoredumpHandler::getInstance().onExit(context, config);
+    return InCrashinfoHandler::getInstance().onExit(context, config);
 }
 
-extern "C" int collectCoredump(struct flb_input_instance *ins, struct flb_config *config, void *context)
+extern "C" int collectInCrashinfo(struct flb_input_instance *ins, struct flb_config *config, void *context)
 {
-    return CoredumpHandler::getInstance().onCollect(ins, config, context);
+    return InCrashinfoHandler::getInstance().onCollect(ins, config, context);
 }
 
 vector<string> split(const string& str, char delim = '.')
@@ -78,20 +78,20 @@ vector<string> split(const string& str, char delim = '.')
     return v;
 }
 
-CoredumpHandler::CoredumpHandler()
-    : m_workDir(PATH_TMP_CRASH)
+InCrashinfoHandler::InCrashinfoHandler()
+    : m_workDir(PATH_TMP_CRASHINFO)
     , m_maxEntries(DEFAULT_MAX_ENTRIES)
 {
     PLUGIN_INFO();
-    setClassName("CoredumpHandler");
+    setClassName("InCrashinfoHandler");
 }
 
-CoredumpHandler::~CoredumpHandler()
+InCrashinfoHandler::~InCrashinfoHandler()
 {
     PLUGIN_INFO();
 }
 
-int CoredumpHandler::onInit(struct flb_input_instance *ins, struct flb_config *config, void *data)
+int InCrashinfoHandler::onInit(struct flb_input_instance *ins, struct flb_config *config, void *data)
 {
     PLUGIN_INFO();
 
@@ -163,7 +163,7 @@ int CoredumpHandler::onInit(struct flb_input_instance *ins, struct flb_config *c
     ctx->wd = inotify_add_watch(ctx->fd, ctx->path, IN_CREATE);
 
     // Collect upon data available on the watch event
-    ret = flb_input_set_collector_event(ins, collectCoredump, ctx->fd, config);
+    ret = flb_input_set_collector_event(ins, collectInCrashinfo, ctx->fd, config);
     if (ret == -1) {
         PLUGIN_ERROR("Failed to set collector_event");
         goto init_error;
@@ -183,7 +183,7 @@ init_error:
     return -1;
 }
 
-int CoredumpHandler::onExit(void *context, struct flb_config *config)
+int InCrashinfoHandler::onExit(void *context, struct flb_config *config)
 {
     PLUGIN_INFO();
     struct flb_in_coredump_config *ctx = (flb_in_coredump_config*)context;
@@ -203,7 +203,7 @@ int CoredumpHandler::onExit(void *context, struct flb_config *config)
 
 // According to my test, this function is called once per crash.
 // That is, this is called multiple times, if multi processes are crashed.
-int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config *config, void *context)
+int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_config *config, void *context)
 {
     struct flb_in_coredump_config *ctx = (flb_in_coredump_config *)context;
     struct inotify_event *event;
@@ -409,7 +409,7 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
     return 0;
 }
 
-void CoredumpHandler::initDistroInfo()
+void InCrashinfoHandler::initDistroInfo()
 {
     int cnt = 0;
 
@@ -422,7 +422,7 @@ void CoredumpHandler::initDistroInfo()
     }
 }
 
-int CoredumpHandler::verifyCoredumpFile(const char *corefile)
+int InCrashinfoHandler::verifyCoredumpFile(const char *corefile)
 {
     int len = strlen(corefile);
 
@@ -435,7 +435,7 @@ int CoredumpHandler::verifyCoredumpFile(const char *corefile)
     return 0;
 }
 
-int CoredumpHandler::parseCoredumpComm(const char *full, char *comm, char *pid, char *exe)
+int InCrashinfoHandler::parseCoredumpComm(const char *full, char *comm, char *pid, char *exe)
 {
     // template : core | comm | uid | boot id | pid | timestamp
     // example  : core.coreexam.0.5999de4a29fb442eb75fb52f8eb64d20.1476.1615253999000000.xz
@@ -536,7 +536,7 @@ int CoredumpHandler::parseCoredumpComm(const char *full, char *comm, char *pid, 
     return 0;
 }
 
-bool CoredumpHandler::getCrashedFunction(const char *crashreport, const char *comm, char *func)
+bool InCrashinfoHandler::getCrashedFunction(const char *crashreport, const char *comm, char *func)
 {
     // A crashreport contains the following stacktrace.
     // The first line here isn't really helpful: __libc_do_syscall (libc.so.6 + 0x1ade6)
@@ -596,7 +596,7 @@ bool CoredumpHandler::getCrashedFunction(const char *crashreport, const char *co
     return matched;
 }
 
-void CoredumpHandler::destroyCoredumpConfig(struct flb_in_coredump_config *ctx)
+void InCrashinfoHandler::destroyCoredumpConfig(struct flb_in_coredump_config *ctx)
 {
     if (!ctx)
         return;

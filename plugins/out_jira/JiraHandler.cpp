@@ -218,7 +218,7 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
         return;
     }
 
-    bool isCrashReport = (string::npos != string(tag, tag_len).find("coredump"));
+    bool isCrashReport = (string::npos != string(tag, tag_len).find("crashinfo"));
 
     msgpack_unpacked_init(&message);
     while (msgpack_unpack_next(&message, (const char*)data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
