@@ -227,14 +227,13 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
     int i;
 
     ctx->buf_start = 0;
-    ssize_t nRead = read(ctx->fd, ctx->buf, sizeof(ctx->buf) - 1);
-    if (nRead <= 0) {
+    ctx->buf_len = read(ctx->fd, ctx->buf, sizeof(ctx->buf) - 1);
+    if (ctx->buf_len <= 0) {
         PLUGIN_ERROR("Failed to read data");
         flb_input_collector_pause(ctx->coll_fd, ctx->ins);
         flb_engine_exit(config);
         return -1;
     }
-    ctx->buf_len = nRead;
     ctx->buf[ctx->buf_len] = '\0';
 
     PLUGIN_INFO("Catch the new coredump event");
@@ -244,14 +243,17 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     for (; ctx->buf_start + EVENT_SIZE < ctx->buf_len; ctx->buf_start += EVENT_SIZE + event->len) {
-        PLUGIN_DEBUG("while loop: buf_start=%u, buf_len=%u", ctx->buf_start, ctx->buf_len);
-        event=(struct inotify_event*) &ctx->buf[ctx->buf_start];
+        PLUGIN_DEBUG("while loop: buf_start=%d, buf_len=%d", ctx->buf_start, ctx->buf_len);
+        event=(struct inotify_event*) (ctx->buf+ctx->buf_start);
 
         if (event->len == 0) {
             PLUGIN_ERROR("Event length is 0");
             continue;
         }
-
+        if (event->len > ctx->buf_len - ctx->buf_start - EVENT_SIZE) {
+            PLUGIN_ERROR("Too long event : %u (start : %d, len : %d)", event->len, ctx->buf_start, ctx->buf_len);
+            break;
+        }
         if (!(event->mask & IN_CREATE)) {
             PLUGIN_ERROR("Not create event : %s", event->name);
             continue;
@@ -297,12 +299,12 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
 
         if ((access("/run/systemd/journal/socket", F_OK) == 0)) {
             // For consistency, change the crash report path to /tmp.
-            sprintf(crashreport, "%s/%s-crashreport.txt", "/tmp", event->name);
+            snprintf(crashreport, sizeof(crashreport), "%s/%s-crashreport.txt", "/tmp", event->name);
             createCrashreport(ctx->crashreport_script, event->name, crashreport);
         } else {
             string filename = event->name;
             size_t extPos = filename.find_last_of('.');
-            sprintf(crashreport, "/tmp/%s-crashreport.txt", filename.substr(0, extPos).c_str());
+            snprintf(crashreport, sizeof(crashreport), "/tmp/%s-crashreport.txt", filename.substr(0, extPos).c_str());
         }
 
         if (access(crashreport, F_OK) != 0) {
@@ -520,9 +522,9 @@ int CoredumpHandler::parseCoredumpComm(const char *full, char *comm, char *pid, 
                 PLUGIN_DEBUG("val : (%s)", val);
 
                 if (strstr(key, "pid") != NULL)
-                    strcpy(pid, val);
+                    snprintf(pid, STR_LEN, "%s", val);
                 if (strstr(key, "exe") != NULL)
-                    strcpy(exe, val);
+                    snprintf(exe, STR_LEN, "%s", val);
             }
             free(val);
         }
@@ -542,7 +544,7 @@ int CoredumpHandler::parseCoredumpComm(const char *full, char *comm, char *pid, 
     {
         PLUGIN_DEBUG("ptr : (%s)", ptr);
         if (strcmp(ptr, "usr") != 0 && strcmp(ptr, "bin") != 0 && strcmp(ptr, "sbin") != 0) {
-            strcpy(comm, ptr);
+            snprintf(comm, STR_LEN, "%s", ptr);
             break;
         }
         ptr = strtok(NULL, "/");
@@ -637,7 +639,7 @@ int CoredumpHandler::createCrashreport(const char *script, const char *corefile,
     // command : webos_capture.py --coredump corefile crashreport
 
     char command[STR_LEN];
-    sprintf(command, "%s --coredump \'%s\' %s", script, corefile, crashreport);
+    snprintf(command, sizeof(command), "%s --coredump \'%s\' %s", script, corefile, crashreport);
     PLUGIN_INFO("command : %s", command);
 
     int ret = system(command);

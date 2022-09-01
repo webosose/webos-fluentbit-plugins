@@ -35,8 +35,8 @@ using namespace std;
 struct flb_in_coredump_config {
     int fd;                // coredump file descriptor
     int coll_fd;           // collector fd
-    unsigned int buf_len;           // read buffer length
-    unsigned int buf_start;         // read buffer length
+    int buf_len;           // read buffer length
+    int buf_start;         // read buffer length
     char buf[BUF_LEN];     // read buffer: 16Kb max
 
     // watch descriptor
