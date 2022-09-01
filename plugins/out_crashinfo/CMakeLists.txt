@@ -1,6 +1,6 @@
 # @@@LICENSE
 #
-#      Copyright (c) 2021 LG Electronics, Inc.
+#      Copyright (c) 2022 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 #
 # LICENSE@@@
 
+include(FindPkgConfig)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 file(GLOB_RECURSE SRC_C ${CMAKE_CURRENT_SOURCE_DIR}/*.c)
@@ -26,4 +28,4 @@ set(SRC
     ${SRC_CPP}
 )
 
-FLB_PLUGIN(in_coredump "${SRC}" "")
+FLB_PLUGIN(out_crashinfo "${SRC}" "")

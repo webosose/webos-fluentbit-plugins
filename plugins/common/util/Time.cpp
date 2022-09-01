@@ -41,11 +41,13 @@ Time::~Time()
 
 std::string Time::getCurrentTime(const char* format)
 {
-    time_t timenow;
-    time(&timenow);
+    struct timespec ts;
+    if (clock_gettime(CLOCK_REALTIME, &ts) == -1) {
+        return "";
+    }
 
     std::string timeStr(30, '\0');
-    std::strftime(&timeStr[0], timeStr.size(), format, std::localtime(&timenow));
+    std::strftime(&timeStr[0], timeStr.size(), format, std::localtime(&ts.tv_sec));
 
     std::string timeString;
     for (auto it = timeStr.begin(); it != timeStr.end(); ++it) {

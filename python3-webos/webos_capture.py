@@ -61,7 +61,7 @@ class WebOSCapture:
         return
 
     def capture_journald(self, file=DEFAULT_JOURNALD):
-        command =  'journalctl > {}'.format(file)
+        command = 'journalctl > {}'.format(file)
         subprocess.check_output(command, shell=True, encoding='utf-8')
         print('Capture Journald : {}'.format(file))
         return

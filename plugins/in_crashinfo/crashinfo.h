@@ -1,4 +1,4 @@
-// Copyright (c) 2021 LG Electronics, Inc.
+// Copyright (c) 2021-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef FLB_IN_COREDUMP_H
-#define FLB_IN_COREDUMP_H
+#ifndef FLB_IN_CRASHINFO_H
+#define FLB_IN_CRASHINFO_H
 
 #include "FluentBit.h"
 

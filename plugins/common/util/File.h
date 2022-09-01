@@ -1,4 +1,4 @@
-// Copyright (c) 2021 LG Electronics, Inc.
+// Copyright (c) 2021-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,7 +29,15 @@
 using namespace std;
 
 class File {
-   public:
+public:
+    static bool compareWithCtime(const string& lhs, const string& rhs) {
+        struct stat attrLhs;
+        struct stat attrRhs;
+        stat(lhs.c_str(), &attrLhs);
+        stat(rhs.c_str(), &attrRhs);
+        return (attrLhs.st_ctime < attrRhs.st_ctime);
+    }
+
     static string readFile(const string& file_name);
     static bool writeFile(const string& filePath, const string& buffer);
     static bool concatToFilename(const string originPath, string& returnPath, const string addingStr);

@@ -1,6 +1,6 @@
 # @@@LICENSE
 #
-#      Copyright (c) 2021 LG Electronics, Inc.
+#      Copyright (c) 2021-2022 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -66,6 +66,7 @@ set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 FLB_OPTION(FLB_JEMALLOC OFF)
 
 add_subdirectory(in_bugreport)
-add_subdirectory(in_coredump)
-add_subdirectory(out_jira)
+add_subdirectory(in_crashinfo)
 add_subdirectory(filter_webos_systemd)
+add_subdirectory(out_crashinfo)
+add_subdirectory(out_jira)

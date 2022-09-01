@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 LG Electronics, Inc.
+// Copyright (c) 2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,10 +14,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef JIRAHANDLER_H_
-#define JIRAHANDLER_H_
+#ifndef OUT_CRASHINFOHANDLER_H_
+#define OUT_CRASHINFOHANDLER_H_
 
-#include <list>
 #include <string>
 
 #include "FluentBit.h"
@@ -27,44 +26,21 @@
 
 using namespace std;
 
-struct time_information
-{
-    int modify_year;
-    int modify_mon;
-    int modify_mday;
-
-    int change_year;
-    int change_mon;
-    int change_mday;
-};
-
-class JiraHandler : public IClassName,
-                    public ISingleton<JiraHandler> {
-friend class ISingleton<JiraHandler>;
+class OutCrashinfoHandler : public IClassName,
+                            public ISingleton<OutCrashinfoHandler> {
+friend class ISingleton<OutCrashinfoHandler>;
 public:
-    virtual ~JiraHandler();
+    virtual ~OutCrashinfoHandler();
 
     int onInit(struct flb_output_instance *ins, struct flb_config *config, void *data);
     int onExit(void *data, struct flb_config *config);
     void onFlush(const void *data, size_t bytes, const char *tag, int tag_len, struct flb_input_instance *ins, void *context, struct flb_config *config);
 
 private:
-    JiraHandler();
+    OutCrashinfoHandler();
 
-    int initDefaultTime();
-    int initOpkgChecksum();
-    int checkOpkgChecksum();
-    int checkExeTime(const string& exe);
-    bool isExceptedExe(const string& exe);
-
-    int m_outFormat;
-    int m_jsonDateFormat;
-    flb_sds_t m_jsonDateKey;
-    string m_jiraScript;
-    bool m_isNFSMode;
-    struct time_information m_defaultTime;
-    string m_officialChecksum;
-    list<string> m_exceptions;
+    string m_workDir;
+    int m_maxEntries;
 };
 
 #endif
