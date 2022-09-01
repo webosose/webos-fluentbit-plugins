@@ -17,7 +17,6 @@
 #ifndef COREDUMPHANDLER_H_
 #define COREDUMPHANDLER_H_
 
-#include <list>
 #include <string>
 #include <sys/inotify.h>
 
@@ -50,17 +49,6 @@ struct flb_in_coredump_config {
     const char *crashreport_script;
 };
 
-struct time_information
-{
-    int modify_year;
-    int modify_mon;
-    int modify_mday;
-
-    int change_year;
-    int change_mon;
-    int change_mday;
-};
-
 class CoredumpHandler : public IClassName,
                         public ISingleton<CoredumpHandler> {
 friend class ISingleton<CoredumpHandler>;
@@ -74,9 +62,7 @@ public:
 private:
     CoredumpHandler();
 
-    int initDefaultTime();
     void initDistroInfo();
-    int initOpkgChecksum();
     int verifyCoredumpFile(const char *corefile);
     int parseCoredumpComm(const char *full, char *comm, char *pid, char *exe);
     int checkOpkgChecksum();
@@ -85,11 +71,7 @@ private:
     bool getCrashedFunction(const char *crashreport, const char *comm, char *func);
     void destroyCoredumpConfig(struct flb_in_coredump_config *ctx);
 
-    struct time_information m_defaultTime;
     string m_distroResult;
-    string m_officialChecksum;
-    list<string> m_exceptions;
-    bool m_isNFSMode;
     string m_workDir;
     int m_maxEntries;
 };

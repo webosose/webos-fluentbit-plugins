@@ -1,4 +1,4 @@
-// Copyright (c) 2021 LG Electronics, Inc.
+// Copyright (c) 2021-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,8 +20,15 @@
 
 #include "util/File.h"
 #include "util/JValueUtil.h"
-#include "util/MSGPackUtil.h"
 #include "util/Logger.h"
+#include "util/MSGPackUtil.h"
+#include "util/PluginConf.h"
+
+#define PATH_OPKG_CEHCKSUM      "/var/luna/preferences/opkg_checksum"
+#define DEFAULT_TIME_FILE       "/lib/systemd/systemd"
+#define PROPS_CONF_FILE         "conf_file"
+#define PROPS_EXCEPTIONS        "EXCEPTIONS"
+#define COREDUMP_WEBOS_CONF     "jira_webos.conf"
 
 #define KEY_SUMMARY             "summary"
 #define KEY_DESCRIPTION         "description"
@@ -30,8 +37,16 @@
 #define KEY_PASSWORD            "password"
 #define KEY_PRIORITY            "priority"
 #define KEY_REPRODUCIBILITY     "reproducibility"
+#define KEY_COMM_PID            "comm.pid"
+#define KEY_EXE                 "exe"
+#define KEY_COREDUMP            "coredump"
+#define KEY_CRASHREPORT         "crashreport"
+#define KEY_JOURNALS            "journals"
+#define KEY_MESSAGES            "messages"
+#define KEY_SCREENSHOT          "screenshot"
+#define KEY_SYSINFO             "sysinfo"
 
-#define DEFAULT_SCRIPT          "webos_issue.py"
+#define STR_LEN                 1024
 
 extern "C" int initJiraHandler(struct flb_output_instance *ins, struct flb_config *config, void *data)
 {
@@ -52,9 +67,11 @@ JiraHandler::JiraHandler()
     : m_outFormat(FLB_PACK_JSON_FORMAT_LINES)
     , m_jsonDateFormat(FLB_PACK_JSON_DATE_DOUBLE)
     , m_jsonDateKey(NULL)
+    , m_isNFSMode(false)
 {
     PLUGIN_INFO();
     setClassName("JiraHandler");
+    m_defaultTime = { 0, 0, 0, 0, 0, 0 };
 }
 
 JiraHandler::~JiraHandler()
@@ -69,6 +86,22 @@ int JiraHandler::onInit(struct flb_output_instance *ins, struct flb_config *conf
     int ret;
     const char *tmp;
     struct flb_jira_config *ctx = NULL;
+
+    if (initDefaultTime() == -1) {
+        PLUGIN_ERROR("Failed to initialize default time information");
+    }
+    PLUGIN_INFO("Default (%s) file time information : mtime (%d-%d-%d), ctime (%d-%d-%d) ",
+                DEFAULT_TIME_FILE,
+                m_defaultTime.modify_year, m_defaultTime.modify_mon, m_defaultTime.modify_mday,
+                m_defaultTime.change_year, m_defaultTime.change_mon, m_defaultTime.change_mday);
+
+    initOpkgChecksum();
+    PLUGIN_INFO("Official checksum : (%s)", m_officialChecksum.c_str());
+
+    string cmdline = File::readFile("/proc/cmdline");
+    if (cmdline.find("nfsroot=") != string::npos)
+        m_isNFSMode = true;
+    PLUGIN_INFO("NFS : (%s)", m_isNFSMode ? "Yes" : "No");
 
     // Set format
     tmp = flb_output_get_property("format", ins);
@@ -97,13 +130,25 @@ int JiraHandler::onInit(struct flb_output_instance *ins, struct flb_config *conf
     else
         m_jsonDateKey = flb_sds_create("date");
 
-    // Set script
-    tmp = flb_output_get_property("script", ins);
-    if (tmp)
-        m_jiraScript = tmp;
-    else
-        m_jiraScript = DEFAULT_SCRIPT;
-    PLUGIN_INFO("Jira script : %s", m_jiraScript.c_str());
+    // Read conf file
+    string exceptionsFilePath;
+    PluginConf pluginConf;
+    tmp = flb_output_get_property(PROPS_CONF_FILE, ins);
+    if (tmp) {
+        if (tmp[0] == '/')
+            exceptionsFilePath = tmp;
+        else
+            exceptionsFilePath = string(config->conf_path) + tmp;
+    } else {
+        exceptionsFilePath = string(config->conf_path) + COREDUMP_WEBOS_CONF;
+    }
+    PLUGIN_INFO("Exceptions_File : %s", exceptionsFilePath.c_str());
+    pluginConf.readConfFile(exceptionsFilePath.c_str());
+    for (const pair<string, string>& kv : pluginConf.getSection(PROPS_EXCEPTIONS)) {
+        if (strcasecmp(kv.first.c_str(), "path") == 0) {
+            m_exceptions.push_back(kv.second);
+        }
+    }
 
     string command = "webos_uploader.py --sync-config";
     PLUGIN_INFO("%s", command.c_str());
@@ -144,16 +189,35 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
     struct flb_time timestamp;
     msgpack_object* payload;
     string summary;
+    // in_bugreport still uses out_jira plugin.
     string description;
     string upload_files;
     string username;
     string password;
     string priority;
     string reproducibility;
-//    msgpack_object* componentsObj;
-//    list<string> components;
-//    string componentsStr = "";
+    // newly added for in_coredump
+    string commPid;
+    string exe;
+    string coredump;
+    string crashreport;
+    string journals;
+    string messages;
+    string screenshot;
+    string sysinfo;
     string command;
+
+    if (m_isNFSMode) {
+        PLUGIN_WARN("NFS mode");
+        FLB_OUTPUT_RETURN(FLB_OK);
+        return;
+    }
+    if (checkOpkgChecksum() == -1) {
+        PLUGIN_WARN("Not official opkg");
+        FLB_OUTPUT_RETURN(FLB_OK);
+        return;
+    }
+
     bool isCrashReport = (string::npos != string(tag, tag_len).find("coredump"));
 
     msgpack_unpacked_init(&message);
@@ -164,6 +228,7 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
             PLUGIN_ERROR("Failed in flb_time_pop_from_msgpack");
             continue;
         }
+
         if (!MSGPackUtil::getValue(payload, KEY_SUMMARY, summary)) {
             PLUGIN_ERROR("Failed to get summary");
             continue;
@@ -188,18 +253,39 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
         if (MSGPackUtil::getValue(payload, KEY_REPRODUCIBILITY, reproducibility)) {
             PLUGIN_INFO("reproducibility : %s", reproducibility.c_str());
         }
-//        if (MSGPackUtil::getValue(payload, KEY_COMPONENTS, &componentsObj)) {
-//            // TODO Support array in MSGPackUtil
-//            for (uint32_t idx = 0; idx < componentsObj->via.array.size; ++idx) {
-//                string component = string(componentsObj->via.array.ptr[idx].via.str.ptr, componentsObj->via.array.ptr[idx].via.str.size);
-//                components.emplace_back(component);
-//                PLUGIN_INFO("component : %s", component.c_str());
-//                componentsStr += "--components \'" + component + "\' ";
-//            }
-//        }
+        if (MSGPackUtil::getValue(payload, KEY_COMM_PID, commPid)) {
+            PLUGIN_INFO("%s : %s", KEY_COMM_PID, commPid.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_EXE, exe)) {
+            PLUGIN_INFO("%s : %s", KEY_EXE, exe.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_COREDUMP, coredump)) {
+            PLUGIN_INFO("%s : %s", KEY_COREDUMP, coredump.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_CRASHREPORT, crashreport)) {
+            PLUGIN_INFO("%s : %s", KEY_CRASHREPORT, crashreport.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_JOURNALS, journals)) {
+            PLUGIN_INFO("%s : %s", KEY_JOURNALS, journals.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_MESSAGES, messages)) {
+            PLUGIN_INFO("%s : %s", KEY_MESSAGES, messages.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_SCREENSHOT, screenshot)) {
+            PLUGIN_INFO("%s : %s", KEY_SCREENSHOT, screenshot.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_SYSINFO, sysinfo)) {
+            PLUGIN_INFO("%s : %s", KEY_SYSINFO, sysinfo.c_str());
+        }
 
-        // template : command --summary XXX --unique-summary --upload-files YYY
-        // example  : webos_issue.py --summary "[CRASH][OSE] bootd" --unique-summary --upload-files core.bootd.0.....xz
+        if (checkExeTime(exe) == -1) {
+            PLUGIN_WARN("Not official exe file");
+            continue;
+        }
+        if (isExceptedExe(exe)) {
+            PLUGIN_WARN("The exe file exists in exception list.");
+            continue;
+        }
 
         command = "webos_issue.py --summary \'" + summary + "\' "
                 + (username.empty() ? "" : "--id '" + username + "' ")
@@ -207,8 +293,8 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
                 + (description.empty() ? "" : "--description '" + description + "' ")
                 + (priority.empty() ? "" : "--priority " + priority + " ")
                 + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
-                + (isCrashReport ? "--unique-summary --attach-crashcounter " : "--enable-popup ")
-                + (upload_files.empty() ? "" : "--upload-files " + upload_files);
+                + (isCrashReport ? "--unique-summary --attach-crashcounter --without-sysinfo --without-screenshot --upload-files \'" + coredump + "\' " + crashreport + " " + journals + " " + messages + " " + screenshot + " " + sysinfo
+                                 : "--enable-popup " + (upload_files.empty() ? "" : "--upload-files " + upload_files));
         PLUGIN_INFO("command : %s", command.c_str());
 
         int ret = system(command.c_str());
@@ -219,24 +305,160 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
         } else {
             PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
         }
-        // remove upload-files except core.XXXX.xz
-        // TODO remove all file or uploaded file ?
-        size_t pos = 0;
-        stringstream ss(upload_files);
-        string token;
-        char delimiter = ' ';
-        while (std::getline(ss, token, delimiter)) {
-            if (token.rfind("core.", 0) == 0) {
-                PLUGIN_DEBUG("Do not remove %s", token.c_str());
-                continue;
-            }
-            if (-1 == unlink(token.c_str())) {
-                PLUGIN_WARN("Failed to remove %s : %s", token.c_str(), strerror(errno));
-                continue;
-            }
-            PLUGIN_INFO("Removed %s", token.c_str());
-        }
     }
     msgpack_unpacked_destroy(&message);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
+
+int JiraHandler::initDefaultTime()
+{
+    struct stat def_stat;
+    struct tm *def_tm_mtime;
+    struct tm *def_tm_ctime;
+
+    if (lstat(DEFAULT_TIME_FILE, &def_stat) == -1) {
+        PLUGIN_ERROR("Failed lstat (%s)", DEFAULT_TIME_FILE);
+        return -1;
+    }
+
+    def_tm_mtime = localtime(&def_stat.st_mtime);
+    def_tm_ctime = localtime(&def_stat.st_ctime);
+
+    m_defaultTime.modify_year = def_tm_mtime->tm_year + 1900;
+    m_defaultTime.modify_mon = def_tm_mtime->tm_mon + 1;
+    m_defaultTime.modify_mday = def_tm_mtime->tm_mday;
+    m_defaultTime.change_year = def_tm_ctime->tm_year + 1900;
+    m_defaultTime.change_mon = def_tm_ctime->tm_mon + 1;
+    m_defaultTime.change_mday = def_tm_ctime->tm_mday;
+
+    return 0;
+}
+
+int JiraHandler::initOpkgChecksum()
+{
+    FILE *fp;
+    int ret;
+    char checksum_result[STR_LEN];
+
+    if (access(PATH_OPKG_CEHCKSUM, F_OK) == 0) {
+        PLUGIN_INFO("Already opkg checksum file is created (%s)", PATH_OPKG_CEHCKSUM);
+        fp = fopen(PATH_OPKG_CEHCKSUM, "r");
+        if (fp == NULL) {
+            PLUGIN_ERROR("Failed fopen");
+            return -1;
+        }
+        fgets(checksum_result, STR_LEN, fp);
+        m_officialChecksum = checksum_result;
+        fclose(fp);
+        return 0;
+    }
+
+    fp = popen("opkg info | md5sum | awk \'{print $1}\'", "r");
+    if (fp == NULL) {
+        PLUGIN_ERROR("Failed popen");
+        return -1;
+    }
+
+    if (fgets(checksum_result, STR_LEN, fp) == NULL) {
+        PLUGIN_ERROR("Failed fgets");
+        pclose(fp);
+        return -1;
+    }
+    pclose(fp);
+
+    checksum_result[strlen(checksum_result)-1] = '\0';
+    m_officialChecksum = checksum_result;
+
+    fp = fopen(PATH_OPKG_CEHCKSUM, "w");
+    if (fp == NULL) {
+        PLUGIN_ERROR("Failed fopen");
+        return -1;
+    }
+
+    fputs(checksum_result, fp);
+
+    fclose(fp);
+
+    PLUGIN_INFO("Create opkg checksum file : (%s)", PATH_OPKG_CEHCKSUM);
+    return 0;
+}
+
+int JiraHandler::checkOpkgChecksum()
+{
+    FILE *fp;
+    int ret;
+    char checksum_result[STR_LEN];
+
+    fp = popen("opkg info | md5sum | awk \'{print $1}\'", "r");
+    if (fp == NULL) {
+        PLUGIN_ERROR("Failed popen");
+        return -1;
+    }
+
+    if (fgets(checksum_result, STR_LEN, fp) == NULL) {
+        PLUGIN_ERROR("Failed fgets");
+        pclose(fp);
+        return -1;
+    }
+    pclose(fp);
+
+    checksum_result[strlen(checksum_result)-1] = '\0';
+
+    PLUGIN_INFO("Default checksum (%s), now (%s)", m_officialChecksum.c_str(), checksum_result);
+
+    if (strcmp(m_officialChecksum.c_str(), checksum_result) == 0)
+        return 0;
+    else
+        return -1;
+}
+
+int JiraHandler::checkExeTime(const string& exe)
+{
+    PLUGIN_INFO("Check time of (%s) file", exe.c_str());
+
+    struct stat exe_stat;
+
+    struct tm *exe_tm_mtime;
+    struct tm *exe_tm_ctime;
+
+    struct time_information exe_time;
+
+    if (lstat(exe.c_str(), &exe_stat) == -1) {
+        PLUGIN_ERROR("Failed lstat (%s)", exe.c_str());
+        return -1;
+    }
+
+    exe_tm_mtime = localtime(&exe_stat.st_mtime);
+    exe_tm_ctime = localtime(&exe_stat.st_ctime);
+
+    exe_time.modify_year = exe_tm_mtime->tm_year + 1900;
+    exe_time.modify_mon = exe_tm_mtime->tm_mon + 1;
+    exe_time.modify_mday = exe_tm_mtime->tm_mday;
+    exe_time.change_year = exe_tm_ctime->tm_year + 1900;
+    exe_time.change_mon = exe_tm_ctime->tm_mon + 1;
+    exe_time.change_mday = exe_tm_ctime->tm_mday;
+
+    PLUGIN_INFO("Modified time information default mtime (%d-%d-%d), exe mtime (%d-%d-%d)", \
+            m_defaultTime.modify_year, m_defaultTime.modify_mon, m_defaultTime.modify_mday, \
+            exe_time.modify_year, exe_time.modify_mon, exe_time.modify_mday);
+    PLUGIN_INFO("Changed time information default ctime (%d-%d-%d), exe ctime (%d-%d-%d)", \
+            m_defaultTime.change_year, m_defaultTime.change_mon, m_defaultTime.change_mday, \
+            exe_time.change_year, exe_time.change_mon, exe_time.change_mday);
+
+    if (m_defaultTime.modify_year != exe_time.modify_year || m_defaultTime.modify_mon != exe_time.modify_mon || m_defaultTime.modify_mday != exe_time.modify_mday || \
+        m_defaultTime.change_year != exe_time.change_year || m_defaultTime.change_mon != exe_time.change_mon || m_defaultTime.change_mday != exe_time.change_mday)
+        return -1;
+
+    return 0;
+}
+
+bool JiraHandler::isExceptedExe(const string& exe)
+{
+    for (string& exception : m_exceptions) {
+        if (strstr(exe.c_str(), exception.c_str()) != NULL) {
+            return true;
+        }
+    }
+    return false;
+}
+

@@ -1,4 +1,4 @@
-// Copyright (c) 2021 LG Electronics, Inc.
+// Copyright (c) 2021-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 #ifndef JIRAHANDLER_H_
 #define JIRAHANDLER_H_
 
+#include <list>
 #include <string>
 
 #include "FluentBit.h"
@@ -25,6 +26,17 @@
 #include "interface/ISingleton.h"
 
 using namespace std;
+
+struct time_information
+{
+    int modify_year;
+    int modify_mon;
+    int modify_mday;
+
+    int change_year;
+    int change_mon;
+    int change_mday;
+};
 
 class JiraHandler : public IClassName,
                     public ISingleton<JiraHandler> {
@@ -39,10 +51,20 @@ public:
 private:
     JiraHandler();
 
+    int initDefaultTime();
+    int initOpkgChecksum();
+    int checkOpkgChecksum();
+    int checkExeTime(const string& exe);
+    bool isExceptedExe(const string& exe);
+
     int m_outFormat;
     int m_jsonDateFormat;
     flb_sds_t m_jsonDateKey;
     string m_jiraScript;
+    bool m_isNFSMode;
+    struct time_information m_defaultTime;
+    string m_officialChecksum;
+    list<string> m_exceptions;
 };
 
 #endif

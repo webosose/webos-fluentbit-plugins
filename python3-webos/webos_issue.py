@@ -18,8 +18,8 @@ from webos_uploader import WebOSUploader
 
 
 COMPONENT_PM = 'PM'
-DEFAULT_OUTDIR = '/var/spool/jira'
-FILE_JOURNALD = 'messages.txt'
+DEFAULT_OUTDIR = '/tmp/jira'
+FILE_JOURNALS = 'journals.txt'
 FILE_SYSINFO = 'info.txt'
 FILE_MESSAGES = 'messages.tgz'
 FILE_SCREENSHOT = 'screenshot.jpg'
@@ -199,7 +199,7 @@ class WebOSIssue:
         for i, file in enumerate(true_files):
             basename = os.path.basename(file)
             desc = "WEB_URL"
-            if basename == FILE_JOURNALD:
+            if basename == FILE_JOURNALS:
                 desc = "SYS_LOG"
             elif basename == FILE_SYSINFO:
                 desc = "SYS_INFO"
@@ -270,6 +270,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--unique-summary',   action='store_true', help='Create issue only if it is unique summary')
     parser.add_argument('--without-sysinfo',  action='store_true', help='Disable uploading system information')
+    parser.add_argument('--without-screenshot', action='store_true', help='Disable taking screenshot')
     parser.add_argument('--show-id',          action='store_true', help='Show ID and PASS')
     parser.add_argument('--show-component',   action='store_true', help='Show all components')
     parser.add_argument('--show-devicename',  action='store_true', help='Show all supported devices')
@@ -353,16 +354,7 @@ if __name__ == "__main__":
 
     elif args.summary is not None:
         # handle 'CREATE' mode
-        outdir = os.path.join(DEFAULT_OUTDIR, '0')
-        if not os.path.isdir(DEFAULT_OUTDIR):
-            os.mkdir(DEFAULT_OUTDIR)
-        subdirs = os.listdir(DEFAULT_OUTDIR)
-        try:
-            if len(subdirs) > 0:
-                subdirs.sort(key=int, reverse=True)
-                outdir = os.path.join(DEFAULT_OUTDIR, str(int(subdirs[0])+1))
-        except Exception as ex:
-            common.warn(str(ex))
+        outdir = DEFAULT_OUTDIR
         common.info('Set output dir: {}'.format(outdir))
         if os.path.exists(outdir):
             common.warn('Remove out dir: {}'.format(outdir))
@@ -370,7 +362,7 @@ if __name__ == "__main__":
         os.mkdir(outdir)
 
         if args.without_sysinfo is False:
-            journal_path = os.path.join(outdir, FILE_JOURNALD)
+            journal_path = os.path.join(outdir, FILE_JOURNALS)
             sysinfo_path = os.path.join(outdir, FILE_SYSINFO)
             messages_path = os.path.join(outdir, FILE_MESSAGES)
             WebOSCapture.instance().capture_journald(journal_path)
@@ -379,9 +371,10 @@ if __name__ == "__main__":
             upload_files.append(journal_path)
             upload_files.append(sysinfo_path)
             upload_files.append(messages_path)
-        screenshot_path = os.path.join(outdir, FILE_SCREENSHOT)
-        WebOSCapture.instance().capture_screenshot(screenshot_path)
-        upload_files.append(screenshot_path)
+        if args.without_screenshot is False:
+            screenshot_path = os.path.join(outdir, FILE_SCREENSHOT)
+            WebOSCapture.instance().capture_screenshot(screenshot_path)
+            upload_files.append(screenshot_path)
 
         components = []
         if args.components is None:

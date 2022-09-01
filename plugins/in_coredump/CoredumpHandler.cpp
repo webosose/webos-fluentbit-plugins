@@ -32,15 +32,12 @@
 #include "util/File.h"
 #include "util/Logger.h"
 #include "util/MSGPackUtil.h"
-#include "util/PluginConf.h"
 
 #define PATH_COREDUMP_DIRECTORY "/var/lib/systemd/coredump"
-#define PATH_OPKG_CEHCKSUM      "/var/luna/preferences/opkg_checksum"
-
-#define DEFAULT_TIME_FILE       "/lib/systemd/systemd"
 
 #define KEY_SUMMARY             "summary"
 #define KEY_COMM_PID            "comm.pid"
+#define KEY_EXE                 "exe"
 #define KEY_COREDUMP            "coredump"
 #define KEY_CRASHREPORT         "crashreport"
 #define KEY_JOURNALS            "journals"
@@ -50,9 +47,6 @@
 
 #define STR_LEN                 1024
 
-#define PROPS_CONF_FILE         "conf_file"
-#define PROPS_EXCEPTIONS        "EXCEPTIONS"
-#define COREDUMP_WEBOS_CONF     "coredump_webos.conf"
 #define PROPS_WORK_DIR          "work_dir"
 #define PATH_TMP_CRASH          "/tmp/crash"
 #define PROPS_MAX_ENTRIES       "max_entries"
@@ -85,13 +79,11 @@ vector<string> split(const string& str, char delim = '.')
 }
 
 CoredumpHandler::CoredumpHandler()
-    : m_isNFSMode(false)
-    , m_workDir(PATH_TMP_CRASH)
+    : m_workDir(PATH_TMP_CRASH)
     , m_maxEntries(DEFAULT_MAX_ENTRIES)
 {
     PLUGIN_INFO();
     setClassName("CoredumpHandler");
-    m_defaultTime = { 0, 0, 0, 0, 0, 0 };
 }
 
 CoredumpHandler::~CoredumpHandler()
@@ -110,27 +102,8 @@ int CoredumpHandler::onInit(struct flb_input_instance *ins, struct flb_config *c
 
     const char *pval = NULL;
 
-    string exceptionsFilePath;
-    PluginConf pluginConf;
-
-    if (initDefaultTime() == -1) {
-        PLUGIN_ERROR("Failed to initialize default time information");
-    }
-    PLUGIN_INFO("Default (%s) file time information : mtime (%d-%d-%d), ctime (%d-%d-%d) ", \
-            DEFAULT_TIME_FILE, \
-            m_defaultTime.modify_year, m_defaultTime.modify_mon, m_defaultTime.modify_mday, \
-            m_defaultTime.change_year, m_defaultTime.change_mon, m_defaultTime.change_mday);
-
     initDistroInfo();
     PLUGIN_INFO("Distro : (%s)", m_distroResult.c_str());
-
-    initOpkgChecksum();
-    PLUGIN_INFO("Official checksum : (%s)", m_officialChecksum.c_str());
-
-    string cmdline = File::readFile("/proc/cmdline");
-    if (cmdline.find("nfsroot=") != string::npos)
-        m_isNFSMode = true;
-    PLUGIN_INFO("NFS : (%s)", m_isNFSMode ? "Yes" : "No");
 
     /* Allocate space for the configuration */
     ctx = (struct flb_in_coredump_config*)flb_malloc(sizeof(struct flb_in_coredump_config));
@@ -156,23 +129,6 @@ int CoredumpHandler::onInit(struct flb_input_instance *ins, struct flb_config *c
     else
         ctx->path = (char *)PATH_COREDUMP_DIRECTORY;
     PLUGIN_INFO("Monitoring coredump file path : %s", ctx->path);
-
-    pval = flb_input_get_property(PROPS_CONF_FILE, ins);
-    if (pval) {
-        if (pval[0] == '/')
-            exceptionsFilePath = pval;
-        else
-            exceptionsFilePath = string(config->conf_path) + pval;
-    } else {
-        exceptionsFilePath = string(config->conf_path) + COREDUMP_WEBOS_CONF;
-    }
-    PLUGIN_INFO("Exceptions_File : %s", exceptionsFilePath.c_str());
-    pluginConf.readConfFile(exceptionsFilePath.c_str());
-    for (const pair<string, string>& kv : pluginConf.getSection(PROPS_EXCEPTIONS)) {
-        if (strcasecmp(kv.first.c_str(), "path") == 0) {
-            m_exceptions.push_back(kv.second);
-        }
-    }
 
     pval = flb_input_get_property(PROPS_WORK_DIR, ins);
     if (pval) {
@@ -404,26 +360,6 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
         }
         PLUGIN_INFO("comm : (%s), pid : (%s), exe (%s)", comm, pid, exe);
 
-        if (m_isNFSMode) {
-            PLUGIN_WARN("NFS mode");
-            break;
-        }
-
-        if (checkOpkgChecksum() == -1) {
-            PLUGIN_WARN("Not official opkg");
-            break;
-        }
-
-        if (checkExeTime(exe) == -1) {
-            PLUGIN_WARN("Not official exe file");
-            continue;
-        }
-
-        if (isExceptedExe(exe)) {
-            PLUGIN_WARN("The exe file exists in exception list.");
-            continue;
-        }
-
         if (!getCrashedFunction(crashreportFullpath.c_str(), comm, crashed_func)) {
             PLUGIN_WARN("Failed to find crashed function");
             crashed_func[0] = '\0';
@@ -434,8 +370,8 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
         msgpack_pack_array(&mp_pck, 2); // time | value
         flb_pack_time_now(&mp_pck);
 
-        // 5~8 pairs
-        int childrenSize = 5;
+        // 6~9 pairs
+        int childrenSize = 6;
         if (access(coredumpFullpath.c_str(), F_OK) == 0)
             childrenSize++;
         if (access(messagesFullpath.c_str(), F_OK) == 0)
@@ -452,8 +388,9 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
         msgpack_pack_str_body(&mp_pck, summary, len);
         PLUGIN_INFO("Add msgpack - key (%s) : val (%s)", KEY_SUMMARY, summary);
 
-        // com.pid, coredump, crashreport, journals, messages, screenshot and sysinfo.
+        // com.pid, exe, coredump, crashreport, journals, messages, screenshot and sysinfo.
         MSGPackUtil::putValue(&mp_pck, KEY_COMM_PID, commPid);
+        MSGPackUtil::putValue(&mp_pck, KEY_EXE, exe);
         if (access(coredumpFullpath.c_str(), F_OK) == 0)
             MSGPackUtil::putValue(&mp_pck, KEY_COREDUMP, coredumpFullpath);
         MSGPackUtil::putValue(&mp_pck, KEY_CRASHREPORT, crashreportFullpath);
@@ -472,30 +409,6 @@ int CoredumpHandler::onCollect(struct flb_input_instance *ins, struct flb_config
     return 0;
 }
 
-int CoredumpHandler::initDefaultTime()
-{
-    struct stat def_stat;
-    struct tm *def_tm_mtime;
-    struct tm *def_tm_ctime;
-
-    if (lstat(DEFAULT_TIME_FILE, &def_stat) == -1) {
-        PLUGIN_ERROR("Failed lstat (%s)", DEFAULT_TIME_FILE);
-        return -1;
-    }
-
-    def_tm_mtime = localtime(&def_stat.st_mtime);
-    def_tm_ctime = localtime(&def_stat.st_ctime);
-
-    m_defaultTime.modify_year = def_tm_mtime->tm_year + 1900;
-    m_defaultTime.modify_mon = def_tm_mtime->tm_mon + 1;
-    m_defaultTime.modify_mday = def_tm_mtime->tm_mday;
-    m_defaultTime.change_year = def_tm_ctime->tm_year + 1900;
-    m_defaultTime.change_mon = def_tm_ctime->tm_mon + 1;
-    m_defaultTime.change_mday = def_tm_ctime->tm_mday;
-
-    return 0;
-}
-
 void CoredumpHandler::initDistroInfo()
 {
     int cnt = 0;
@@ -507,55 +420,6 @@ void CoredumpHandler::initDistroInfo()
 
         m_distroResult += *(WEBOS_TARGET_DISTRO+i);
     }
-}
-
-int CoredumpHandler::initOpkgChecksum()
-{
-    FILE *fp;
-    int ret;
-    char checksum_result[STR_LEN];
-
-    if (access(PATH_OPKG_CEHCKSUM, F_OK) == 0) {
-        PLUGIN_INFO("Already opkg checksum file is created (%s)", PATH_OPKG_CEHCKSUM);
-        fp = fopen(PATH_OPKG_CEHCKSUM, "r");
-        if (fp == NULL) {
-            PLUGIN_ERROR("Failed fopen");
-            return -1;
-        }
-        fgets(checksum_result, STR_LEN, fp);
-        m_officialChecksum = checksum_result;
-        fclose(fp);
-        return 0;
-    }
-
-    fp = popen("opkg info | md5sum | awk \'{print $1}\'", "r");
-    if (fp == NULL) {
-        PLUGIN_ERROR("Failed popen");
-        return -1;
-    }
-
-    if (fgets(checksum_result, STR_LEN, fp) == NULL) {
-        PLUGIN_ERROR("Failed fgets");
-        pclose(fp);
-        return -1;
-    }
-    pclose(fp);
-
-    checksum_result[strlen(checksum_result)-1] = '\0';
-    m_officialChecksum = checksum_result;
-
-    fp = fopen(PATH_OPKG_CEHCKSUM, "w");
-    if (fp == NULL) {
-        PLUGIN_ERROR("Failed fopen");
-        return -1;
-    }
-
-    fputs(checksum_result, fp);
-
-    fclose(fp);
-
-    PLUGIN_INFO("Create opkg checksum file : (%s)", PATH_OPKG_CEHCKSUM);
-    return 0;
 }
 
 int CoredumpHandler::verifyCoredumpFile(const char *corefile)
@@ -670,85 +534,6 @@ int CoredumpHandler::parseCoredumpComm(const char *full, char *comm, char *pid, 
     }
 
     return 0;
-}
-
-int CoredumpHandler::checkOpkgChecksum()
-{
-    FILE *fp;
-    int ret;
-    char checksum_result[STR_LEN];
-
-    fp = popen("opkg info | md5sum | awk \'{print $1}\'", "r");
-    if (fp == NULL) {
-        PLUGIN_ERROR("Failed popen");
-        return -1;
-    }
-
-    if (fgets(checksum_result, STR_LEN, fp) == NULL) {
-        PLUGIN_ERROR("Failed fgets");
-        pclose(fp);
-        return -1;
-    }
-    pclose(fp);
-
-    checksum_result[strlen(checksum_result)-1] = '\0';
-
-    PLUGIN_INFO("Default checksum (%s), now (%s)", m_officialChecksum.c_str(), checksum_result);
-
-    if (strcmp(m_officialChecksum.c_str(), checksum_result) == 0)
-        return 0;
-    else
-        return -1;
-}
-
-int CoredumpHandler::checkExeTime(const char *exe)
-{
-    PLUGIN_INFO("Check time of (%s) file", exe);
-
-    struct stat exe_stat;
-
-    struct tm *exe_tm_mtime;
-    struct tm *exe_tm_ctime;
-
-    struct time_information exe_time;
-
-    if (lstat(exe, &exe_stat) == -1) {
-        PLUGIN_ERROR("Failed lstat (%s)", exe);
-        return -1;
-    }
-
-    exe_tm_mtime = localtime(&exe_stat.st_mtime);
-    exe_tm_ctime = localtime(&exe_stat.st_ctime);
-
-    exe_time.modify_year = exe_tm_mtime->tm_year + 1900;
-    exe_time.modify_mon = exe_tm_mtime->tm_mon + 1;
-    exe_time.modify_mday = exe_tm_mtime->tm_mday;
-    exe_time.change_year = exe_tm_ctime->tm_year + 1900;
-    exe_time.change_mon = exe_tm_ctime->tm_mon + 1;
-    exe_time.change_mday = exe_tm_ctime->tm_mday;
-
-    PLUGIN_INFO("Modified time information default mtime (%d-%d-%d), exe mtime (%d-%d-%d)", \
-            m_defaultTime.modify_year, m_defaultTime.modify_mon, m_defaultTime.modify_mday, \
-            exe_time.modify_year, exe_time.modify_mon, exe_time.modify_mday);
-    PLUGIN_INFO("Changed time information default ctime (%d-%d-%d), exe ctime (%d-%d-%d)", \
-            m_defaultTime.change_year, m_defaultTime.change_mon, m_defaultTime.change_mday, \
-            exe_time.change_year, exe_time.change_mon, exe_time.change_mday);
-
-    if (m_defaultTime.modify_year != exe_time.modify_year || m_defaultTime.modify_mon != exe_time.modify_mon || m_defaultTime.modify_mday != exe_time.modify_mday || \
-        m_defaultTime.change_year != exe_time.change_year || m_defaultTime.change_mon != exe_time.change_mon || m_defaultTime.change_mday != exe_time.change_mday)
-        return -1;
-
-    return 0;
-}
-
-bool CoredumpHandler::isExceptedExe(const char *exe)
-{
-    for (string& exception : m_exceptions) {
-        if (strstr(exe, exception.c_str()) != NULL) {
-            return true;
-        }
-    }
-    return false;
 }
 
 bool CoredumpHandler::getCrashedFunction(const char *crashreport, const char *comm, char *func)
