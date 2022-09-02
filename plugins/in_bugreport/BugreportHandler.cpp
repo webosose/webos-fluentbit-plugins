@@ -519,18 +519,36 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
 
     // TODO We need to pass data to output plugin. There are no output plugins at this time.
 
+    string key;
+    if (ErrCode_NONE != (errCode = createTicket(summary, description, priority, reproducibility, screenshotStr, key))) {
+        return sendResponse(request, errCode);
+    }
+    for (const string& screenshotPath : screenshotPaths) {
+        if (-1 == unlink(screenshotPath.c_str())) {
+            PLUGIN_WARN("Failed to remove %s : %s", screenshotPath.c_str(), strerror(errno));
+            continue;
+        }
+        PLUGIN_INFO("Removed %s", screenshotPath.c_str());
+    }
+    JValue responsePayload = Object();
+    responsePayload.put("key", key);
+    responsePayload.put("returnValue", true);
+    return sendResponse(request, responsePayload.stringify());
+}
+
+ErrCode BugreportHandler::createTicket(const string& summary, const string& description, const string& priority, const string& reproducibility, const string& uploadFiles, string& key)
+{
     string command = "webos_issue.py --enable-popup --summary \'" + summary + "\' "
                    + (description.empty() ? "" : "--description '" + description + "' ")
                    + (priority.empty() ? "" : "--priority " + priority + " ")
                    + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
-                   + (screenshotStr.empty() ? "" : "--upload-files " + screenshotStr);
+                   + (uploadFiles.empty() ? "" : "--upload-files " + uploadFiles);
     PLUGIN_INFO("%s", command.c_str());
     FILE *fp = popen(command.c_str(), "r");
     if (fp == NULL) {
         PLUGIN_WARN("Failed to popen : %s", command.c_str());
-        return sendResponse(request, ErrCode_INTERNAL_ERROR);
+        return ErrCode_INTERNAL_ERROR;
     }
-    string key;
     char buff[1024];
     while (fgets(buff, sizeof(buff), fp)) {
         buff[strlen(buff)-1] = '\0';
@@ -540,22 +558,12 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
         key = buff + strlen(TicketCreated);
     }
     int ret = pclose(fp);
-    if (WIFEXITED(ret) && WEXITSTATUS(ret) == 0) {
-        PLUGIN_INFO("Done");
-        for (const string& screenshotPath : screenshotPaths) {
-            if (-1 == unlink(screenshotPath.c_str())) {
-                PLUGIN_WARN("Failed to remove %s : %s", screenshotPath.c_str(), strerror(errno));
-                continue;
-            }
-            PLUGIN_INFO("Removed %s", screenshotPath.c_str());
-        }
-        JValue responsePayload = Object();
-        responsePayload.put("key", key);
-        responsePayload.put("returnValue", true);
-        return sendResponse(request, responsePayload.stringify());
+    if (!WIFEXITED(ret) || WEXITSTATUS(ret)) {
+        PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
+        return ErrCode_INTERNAL_ERROR;
     }
-    PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
-    return sendResponse(request, ErrCode_INTERNAL_ERROR);
+    PLUGIN_INFO("Done [%s]", key.c_str());
+    return ErrCode_NONE;
 }
 
 ErrCode BugreportHandler::processF9()
@@ -588,13 +596,10 @@ ErrCode BugreportHandler::processF12()
 {
     PLUGIN_INFO("[CTRL][ALT][F12] Create bug");
     m_screenshotManager.captureCompositorOutput();
-    JValue payload = Object();
-    payload.put("summary", m_configManager.getSummary());
-    payload.put("description", m_configManager.getDescription());
-    payload.put("upload-files", m_screenshotManager.toString());
-    if (!pushToRpaQueue(payload)) {
-        PLUGIN_ERROR("Failed in rpa_queue_push");
-        return ErrCode_INTERNAL_ERROR;
+    ErrCode errCode = ErrCode_NONE;
+    string key;
+    if (ErrCode_NONE == (errCode = createTicket(m_configManager.getSummary(), m_configManager.getDescription(), "", "", m_screenshotManager.toString(), key))) {
+        m_screenshotManager.removeScreenshots();
     }
-    return ErrCode_NONE;
+    return errCode;
 }

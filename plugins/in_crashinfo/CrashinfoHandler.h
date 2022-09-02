@@ -65,9 +65,6 @@ private:
     void initDistroInfo();
     int verifyCoredumpFile(const char *corefile);
     int parseCoredumpComm(const char *full, char *comm, char *pid, char *exe);
-    int checkOpkgChecksum();
-    int checkExeTime(const char *exe);
-    bool isExceptedExe(const char *exe);
     bool getCrashedFunction(const char *crashreport, const char *comm, char *func);
     void destroyCoredumpConfig(struct flb_in_coredump_config *ctx);
 

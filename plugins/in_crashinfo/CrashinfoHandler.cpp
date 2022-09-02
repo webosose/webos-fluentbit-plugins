@@ -137,7 +137,6 @@ int InCrashinfoHandler::onInit(struct flb_input_instance *ins, struct flb_config
     PLUGIN_INFO("Work_Dir : %s", m_workDir.c_str());
     if (!File::createDir(m_workDir)) {
         PLUGIN_ERROR("Failed to create Dir: %s", m_workDir.c_str());
-        return -1;
     }
 
     pval = flb_input_get_property(PROPS_MAX_ENTRIES, ins);
