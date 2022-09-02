@@ -81,7 +81,6 @@ int OutCrashinfoHandler::onInit(struct flb_output_instance *ins, struct flb_conf
     PLUGIN_INFO("Work_Dir : %s", m_workDir.c_str());
     if (!File::createDir(m_workDir)) {
         PLUGIN_ERROR("Failed to create Dir: %s", m_workDir.c_str());
-        return -1;
     }
 
     tmp = flb_output_get_property(PROPS_MAX_ENTRIES, ins);
