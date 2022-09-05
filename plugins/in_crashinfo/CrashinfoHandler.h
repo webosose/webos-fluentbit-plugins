@@ -62,13 +62,9 @@ public:
 private:
     InCrashinfoHandler();
 
-    void initDistroInfo();
     int verifyCoredumpFile(const char *corefile);
-    int parseCoredumpComm(const char *full, char *comm, char *pid, char *exe);
-    bool getCrashedFunction(const char *crashreport, const char *comm, char *func);
     void destroyCoredumpConfig(struct flb_in_coredump_config *ctx);
 
-    string m_distroResult;
     string m_workDir;
     int m_maxEntries;
 };

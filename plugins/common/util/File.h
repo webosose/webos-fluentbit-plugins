@@ -33,8 +33,10 @@ public:
     static bool compareWithCtime(const string& lhs, const string& rhs) {
         struct stat attrLhs;
         struct stat attrRhs;
-        stat(lhs.c_str(), &attrLhs);
-        stat(rhs.c_str(), &attrRhs);
+        if (stat(lhs.c_str(), &attrLhs) == -1)
+            return true;
+        if (stat(rhs.c_str(), &attrRhs) == -1)
+            return true;
         return (attrLhs.st_ctime < attrRhs.st_ctime);
     }
 
