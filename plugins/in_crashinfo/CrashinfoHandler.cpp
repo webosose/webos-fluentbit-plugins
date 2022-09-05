@@ -19,16 +19,13 @@
 #include <fcntl.h>
 #include <fstream>
 #include <limits.h>
-#include <regex>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/inotify.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/xattr.h>
 #include <vector>
 
-#include "Environment.h"
 #include "util/File.h"
 #include "util/Logger.h"
 #include "util/MSGPackUtil.h"
@@ -37,7 +34,6 @@
 
 #define KEY_SUMMARY             "summary"
 #define KEY_COMM_PID            "comm.pid"
-#define KEY_EXE                 "exe"
 #define KEY_COREDUMP            "coredump"
 #define KEY_CRASHREPORT         "crashreport"
 #define KEY_JOURNALS            "journals"
@@ -101,9 +97,6 @@ int InCrashinfoHandler::onInit(struct flb_input_instance *ins, struct flb_config
     (void) data;
 
     const char *pval = NULL;
-
-    initDistroInfo();
-    PLUGIN_INFO("Distro : (%s)", m_distroResult.c_str());
 
     /* Allocate space for the configuration */
     ctx = (struct flb_in_coredump_config*)flb_malloc(sizeof(struct flb_in_coredump_config));
@@ -209,17 +202,6 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
 
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
-
-    char comm[STR_LEN];
-    char pid[STR_LEN];
-    char exe[STR_LEN];
-    char crashed_func[STR_LEN];
-    char upload_files[STR_LEN];
-    char summary[STR_LEN];
-
-    int ret;
-    int len;
-    int i;
 
     ctx->buf_start = 0;
     ctx->buf_len = read(ctx->fd, ctx->buf, sizeof(ctx->buf) - 1);
@@ -352,25 +334,11 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
         // Guarantee crashreport file closing time
         sleep(1);
 
-
-        if (parseCoredumpComm(coredumpFullpath.c_str(), comm, pid, exe) == -1) {
-            PLUGIN_ERROR("Fail to parse coredump file");
-            continue;
-        }
-        PLUGIN_INFO("comm : (%s), pid : (%s), exe (%s)", comm, pid, exe);
-
-        if (!getCrashedFunction(crashreportFullpath.c_str(), comm, crashed_func)) {
-            PLUGIN_WARN("Failed to find crashed function");
-            crashed_func[0] = '\0';
-        }
-
-        snprintf(upload_files, STR_LEN, "\'%s\' %s", coredumpFullpath.c_str(), crashreportFullpath.c_str());
-
         msgpack_pack_array(&mp_pck, 2); // time | value
         flb_pack_time_now(&mp_pck);
 
-        // 6~9 pairs
-        int childrenSize = 6;
+        // 4~7 pairs
+        int childrenSize = 4;
         if (access(coredumpFullpath.c_str(), F_OK) == 0)
             childrenSize++;
         if (access(messagesFullpath.c_str(), F_OK) == 0)
@@ -379,17 +347,8 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
             childrenSize++;
         msgpack_pack_map(&mp_pck, childrenSize);
 
-        // key : summary | value : [RDX_CRASH][distro] comm
-        msgpack_pack_str(&mp_pck, len=strlen(KEY_SUMMARY));
-        msgpack_pack_str_body(&mp_pck, KEY_SUMMARY, len);
-        snprintf(summary, STR_LEN, "[RDX_CRASH][%s] %s %s", m_distroResult.c_str(), exe, crashed_func);
-        msgpack_pack_str(&mp_pck, len=strlen(summary));
-        msgpack_pack_str_body(&mp_pck, summary, len);
-        PLUGIN_INFO("Add msgpack - key (%s) : val (%s)", KEY_SUMMARY, summary);
-
-        // com.pid, exe, coredump, crashreport, journals, messages, screenshot and sysinfo.
+        // com.pid, coredump, crashreport, journals, messages, screenshot and sysinfo.
         MSGPackUtil::putValue(&mp_pck, KEY_COMM_PID, commPid);
-        MSGPackUtil::putValue(&mp_pck, KEY_EXE, exe);
         if (access(coredumpFullpath.c_str(), F_OK) == 0)
             MSGPackUtil::putValue(&mp_pck, KEY_COREDUMP, coredumpFullpath);
         MSGPackUtil::putValue(&mp_pck, KEY_CRASHREPORT, crashreportFullpath);
@@ -408,19 +367,6 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
     return 0;
 }
 
-void InCrashinfoHandler::initDistroInfo()
-{
-    int cnt = 0;
-
-    m_distroResult = "";
-    for (int i=0; i < strlen(WEBOS_TARGET_DISTRO); i++) {
-        if (*(WEBOS_TARGET_DISTRO+i) == '-')
-            continue;
-
-        m_distroResult += *(WEBOS_TARGET_DISTRO+i);
-    }
-}
-
 int InCrashinfoHandler::verifyCoredumpFile(const char *corefile)
 {
     int len = strlen(corefile);
@@ -432,167 +378,6 @@ int InCrashinfoHandler::verifyCoredumpFile(const char *corefile)
         return -1;
 
     return 0;
-}
-
-int InCrashinfoHandler::parseCoredumpComm(const char *full, char *comm, char *pid, char *exe)
-{
-    // template : core | comm | uid | boot id | pid | timestamp
-    // example  : core.coreexam.0.5999de4a29fb442eb75fb52f8eb64d20.1476.1615253999000000.xz
-
-    ssize_t buflen, keylen, vallen;
-    char exe_str[STR_LEN];
-    char *buf, *key, *val;
-
-    PLUGIN_INFO("Full param : (%s)", full);
-
-    // Determine the length of the buffer needed.
-    buflen = listxattr(full, NULL, 0);
-    if (buflen == -1) {
-        PLUGIN_ERROR("Failed listxattr");
-        return -1;
-    }
-    if (buflen == 0) {
-        PLUGIN_ERROR("No attributes");
-        return -1;
-    }
-
-    // Allocate the buffer.
-    buf = (char*)malloc(buflen);
-    if (buf == NULL) {
-        PLUGIN_ERROR("Failed malloc");
-        return -1;
-    }
-
-    // Copy the list of attribute keys to the buffer
-    buflen = listxattr(full, buf, buflen);
-    PLUGIN_DEBUG("buflen : (%d)", buflen);
-
-    if (buflen == -1) {
-        return -1;
-    } else if (buflen == 0) {
-        PLUGIN_ERROR("No attributes full : (%s)", full);
-        return -1;
-    }
-
-    key = buf;
-    while (0 < buflen) {
-
-        // Output attribute key
-        PLUGIN_DEBUG("key : (%s)", key);
-
-        // Determine length of the value
-        vallen = getxattr(full, key, NULL, 0);
-
-        if (vallen == -1) {
-            PLUGIN_ERROR("Failed getxattr");
-        } else if (vallen == 0) {
-            PLUGIN_ERROR("No value");
-        } else {
-            val = (char*)malloc(vallen + 1);
-            if (val == NULL) {
-                PLUGIN_ERROR("Failed malloc");
-                return -1;
-            }
-
-            // Copy value to buffer
-            vallen = getxattr(full, key, val, vallen);
-            if (vallen == -1) {
-                PLUGIN_ERROR("Failed getxattr");
-            } else {
-                // Check attribute value (exe, pid)
-                val[vallen] = 0;
-                PLUGIN_DEBUG("val : (%s)", val);
-
-                if (strstr(key, "pid") != NULL)
-                    snprintf(pid, STR_LEN, "%s", val);
-                if (strstr(key, "exe") != NULL)
-                    snprintf(exe, STR_LEN, "%s", val);
-            }
-            free(val);
-        }
-
-        // Forward to next attribute key.
-        keylen = strlen(key) + 1;
-        buflen -= keylen;
-        key += keylen;
-    }
-    free(buf);
-
-    strncpy(exe_str, exe, STR_LEN);
-    exe_str[STR_LEN-1] = '\0';
-
-    char *ptr = strtok(exe_str, "/");
-    while (ptr != NULL)
-    {
-        PLUGIN_DEBUG("ptr : (%s)", ptr);
-        if (strcmp(ptr, "usr") != 0 && strcmp(ptr, "bin") != 0 && strcmp(ptr, "sbin") != 0) {
-            snprintf(comm, STR_LEN, "%s", ptr);
-            break;
-        }
-        ptr = strtok(NULL, "/");
-    }
-
-    return 0;
-}
-
-bool InCrashinfoHandler::getCrashedFunction(const char *crashreport, const char *comm, char *func)
-{
-    // A crashreport contains the following stacktrace.
-    // The first line here isn't really helpful: __libc_do_syscall (libc.so.6 + 0x1ade6)
-    // So here try to fina a meaningful line: _Z5funcCv (coredump_example + 0xb6e)
-    // ...
-    // Found module coredump_example with build-id: 331c2591ed23996f271990c41f3775874eff0ba7
-    // Stack trace of thread 13609:
-    //   #0  0x00000000f7508de6 __libc_do_syscall (libc.so.6 + 0x1ade6)
-    //   #1  0x00000000f7517416 __libc_signal_restore_set (libc.so.6 + 0x29416)
-    //   #2  0x00000000f7508922 __GI_abort (libc.so.6 + 0x1a922)
-    //   #3  0x00000000f753e834 __libc_message (libc.so.6 + 0x50834)
-    //   #4  0x00000000f7543606 malloc_printerr (libc.so.6 + 0x55606)
-    //   #5  0x00000000f7544bd2 _int_free (libc.so.6 + 0x56bd2)
-    //   #6  0x0000000000508b6e _Z5funcCv (coredump_example + 0xb6e)
-
-    std::ifstream contents(crashreport);
-    if (!contents) {
-        PLUGIN_ERROR("File open error %s (%d)", crashreport, errno);
-        return false;
-    }
-    string line;
-    smatch match;
-    bool matched = false;
-    while (getline(contents, line)) {
-        PLUGIN_DEBUG(" < %s", line.c_str());
-        if (string::npos == line.find("Stack trace of thread"))
-            continue;
-        break;
-    }
-    while (getline(contents, line)) {
-        // #0  0x0000000000487ba4 _Z5funcCv (coredump_example + 0xba4)
-        // #0  0x00000000b6cb3c26 n/a (libc.so.6 + 0x1ac26)
-        // #0  0x00000000f7508de6 __libc_do_syscall (libc.so.6 + 0x1ade6)
-        // [:graph:] = letters, digits, and punctuation
-        // [:print:] = [:graph:] and space
-        if (!regex_match(line, match, regex("\\s*#([0-9]+)\\s+0x[0-9a-zA-Z]+\\s+([[:graph:]]+)\\s+([[:print:]]+)"))) {
-            PLUGIN_INFO("Not matched: %s", line.c_str());
-            continue;
-        }
-        // string(match[3]) : (coredmp_example + 0xba4)
-        // string(match[2]) : _Z5funcCv
-        // Summary: /usr/bin/coredump_example 'in _Z5funcCv (coredmp_example + 0xba4)'
-        if (match.ready() && match.size() == 4) {
-            if (string(match[1]).find("0") == 0) {
-                PLUGIN_INFO("Matched with #0  : (%s)", string(match[0]).c_str());
-                snprintf(func, STR_LEN, "in %s", string(match[2]).c_str(), string(match[3]).c_str());
-                matched = true;
-            }
-            if (string(match[3]).find(comm, 1) == 1) {
-                PLUGIN_INFO("Matched with comm: (%s)", string(match[0]).c_str());
-                snprintf(func, STR_LEN, "in %s %s", string(match[2]).c_str(), string(match[3]).c_str());
-                matched = true;
-                break;
-            }
-        }
-    }
-    return matched;
 }
 
 void InCrashinfoHandler::destroyCoredumpConfig(struct flb_in_coredump_config *ctx)

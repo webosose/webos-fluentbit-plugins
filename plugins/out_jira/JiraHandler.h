@@ -52,8 +52,11 @@ private:
     JiraHandler();
 
     int initDefaultTime();
+    void initDistroInfo();
     int initOpkgChecksum();
     int checkOpkgChecksum();
+    int parseCoredumpComm(const string& coredump, string& comm, string& pid, string& exe);
+    bool getCrashedFunction(const string& crashreport, const string& comm, string& func);
     int checkExeTime(const string& exe);
     bool isExceptedExe(const string& exe);
 
@@ -63,6 +66,7 @@ private:
     string m_jiraScript;
     bool m_isNFSMode;
     struct time_information m_defaultTime;
+    string m_distro;
     string m_officialChecksum;
     list<string> m_exceptions;
 };
