@@ -27,7 +27,7 @@
 #include "util/MSGPackUtil.h"
 #include "util/PluginConf.h"
 
-#define PATH_OPKG_CEHCKSUM      "/var/luna/preferences/opkg_checksum"
+#define PATH_OPKG_CHECKSUM      "/var/luna/preferences/opkg_checksum"
 #define DEFAULT_TIME_FILE       "/lib/systemd/systemd"
 #define PROPS_CONF_FILE         "conf_file"
 #define PROPS_EXCEPTIONS        "EXCEPTIONS"
@@ -367,13 +367,8 @@ int JiraHandler::initOpkgChecksum()
     int ret;
     char checksum_result[STR_LEN];
 
-    if (access(PATH_OPKG_CEHCKSUM, F_OK) == 0) {
-        PLUGIN_INFO("Already opkg checksum file is created (%s)", PATH_OPKG_CEHCKSUM);
-        fp = fopen(PATH_OPKG_CEHCKSUM, "r");
-        if (fp == NULL) {
-            PLUGIN_ERROR("Failed fopen");
-            return -1;
-        }
+    fp = fopen(PATH_OPKG_CHECKSUM, "r");
+    if (fp != NULL) {
         fgets(checksum_result, STR_LEN, fp);
         m_officialChecksum = checksum_result;
         fclose(fp);
@@ -396,7 +391,7 @@ int JiraHandler::initOpkgChecksum()
     checksum_result[strlen(checksum_result)-1] = '\0';
     m_officialChecksum = checksum_result;
 
-    fp = fopen(PATH_OPKG_CEHCKSUM, "w");
+    fp = fopen(PATH_OPKG_CHECKSUM, "w");
     if (fp == NULL) {
         PLUGIN_ERROR("Failed fopen");
         return -1;
@@ -406,7 +401,7 @@ int JiraHandler::initOpkgChecksum()
 
     fclose(fp);
 
-    PLUGIN_INFO("Create opkg checksum file : (%s)", PATH_OPKG_CEHCKSUM);
+    PLUGIN_INFO("Create opkg checksum file : (%s)", PATH_OPKG_CHECKSUM);
     return 0;
 }
 

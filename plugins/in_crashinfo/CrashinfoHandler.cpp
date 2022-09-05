@@ -258,7 +258,10 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
             crashEntries.sort(File::compareWithCtime);
             for (const string& crashEntry : crashEntries) {
                 struct stat attr;
-                stat(crashEntry.c_str(), &attr);
+                if (stat(crashEntry.c_str(), &attr) == -1) {
+                    PLUGIN_WARN("Failed to stat %s: %s", crashEntry.c_str(), strerror(errno));
+                    continue;
+                }
                 PLUGIN_INFO("ctime: (%ld), m_time: (%ld), entry: (%s)", attr.st_ctime, attr.st_mtime, crashEntry.c_str());
             }
             for (size_t i = crashEntries.size(); i >= m_maxEntries; i--) {
