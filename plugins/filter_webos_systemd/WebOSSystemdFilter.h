@@ -1,4 +1,4 @@
-// Copyright (c) 2021 LG Electronics, Inc.
+// Copyright (c) 2021-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef HANDLER_H_
-#define HANDLER_H_
+#ifndef WEBOS_SYSTEMD_FILTER_H_
+#define WEBOS_SYSTEMD_FILTER_H_
 
 #include <functional>
 #include <list>
@@ -34,11 +34,11 @@
 using namespace pbnjson;
 using namespace std;
 
-class Handler : public IClassName,
-                public ISingleton<Handler> {
-friend class ISingleton<Handler>;
+class WebOSSystemdFilter : public IClassName,
+                           public ISingleton<WebOSSystemdFilter> {
+friend class ISingleton<WebOSSystemdFilter>;
 public:
-    virtual ~Handler();
+    virtual ~WebOSSystemdFilter();
 
     int onInit(struct flb_filter_instance *instance, struct flb_config *config, void *data);
     int onExit(void *context, struct flb_config *confi);
@@ -48,7 +48,7 @@ private:
     typedef std::function<void(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)> MessageHandler;
     typedef std::function<void(msgpack_unpacked* result, msgpack_packer* packer)> SyslogIdentifierHandler;
 
-    Handler();
+    WebOSSystemdFilter();
 
     void registerRegexAndHandler(const string& regex, MessageHandler handler);
     bool packCommonMsg(msgpack_unpacked* result, flb_time* timestamp, msgpack_packer* packer, size_t mapSize);

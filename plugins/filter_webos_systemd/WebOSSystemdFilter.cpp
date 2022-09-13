@@ -1,4 +1,4 @@
-// Copyright (c) 2021 LG Electronics, Inc.
+// Copyright (c) 2021-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#include "Handler.h"
+#include "WebOSSystemdFilter.h"
 
 #include <glib.h>
 #include <pwd.h>
@@ -27,46 +27,46 @@
 #include "util/MSGPackUtil.h"
 #include "util/Time.h"
 
-const string Handler::PATH_RESPAWNED = "/tmp/fluentbit-respawned";
-const int Handler::APPLAUNCHPERF_TIMEOUT_SEC = 60;
+const string WebOSSystemdFilter::PATH_RESPAWNED = "/tmp/fluentbit-respawned";
+const int WebOSSystemdFilter::APPLAUNCHPERF_TIMEOUT_SEC = 60;
 // [I][RunningApp][setLifeStatus][c9b3edd5-f925-4442-a408-20c7428ac3ef0] Changed: com.webos.app.test.shaka-player (launching => foreground)
-const string Handler::REGEX_SetLifeStatus = "^\\[I\\]\\[RunningApp\\]\\[setLifeStatus\\]\\[([[:print:]]+)\\] Changed: ([[:print:]]+) \\(([[:alpha:]]+) ==> ([[:alpha:]]+)\\)";
+const string WebOSSystemdFilter::REGEX_SetLifeStatus = "^\\[I\\]\\[RunningApp\\]\\[setLifeStatus\\]\\[([[:print:]]+)\\] Changed: ([[:print:]]+) \\(([[:alpha:]]+) ==> ([[:alpha:]]+)\\)";
 // [I][ApplicationManager][onAPICalled][APIRequest] API(/launch) Sender(com.webos.surfacemanager)
-const string Handler::REGEX_ApiLaunchCall = "^\\[I\\]\\[ApplicationManager\\]\\[onAPICalled\\]\\[APIRequest\\] API\\(/launch\\) Sender\\([[:print:]]+\\)";
+const string WebOSSystemdFilter::REGEX_ApiLaunchCall = "^\\[I\\]\\[ApplicationManager\\]\\[onAPICalled\\]\\[APIRequest\\] API\\(/launch\\) Sender\\([[:print:]]+\\)";
 // [I][RuntimeInfo][initialize] DisplayId(-1) DeviceType() IsInContainer(false)
 // [I][RuntimeInfo][initialize] DisplayId(1) DeviceType(RSE) IsInContainer(true)
-const string Handler::REGEX_RuntimeInfo = "^\\[I\\]\\[RuntimeInfo\\]\\[initialize\\] DisplayId\\(([[:graph:]]+)\\) DeviceType\\([[:graph:]]*\\) IsInContainer\\([[:graph:]]*\\)";
+const string WebOSSystemdFilter::REGEX_RuntimeInfo = "^\\[I\\]\\[RuntimeInfo\\]\\[initialize\\] DisplayId\\(([[:graph:]]+)\\) DeviceType\\([[:graph:]]*\\) IsInContainer\\([[:graph:]]*\\)";
 
-extern "C" int initHandler(struct flb_filter_instance *instance, struct flb_config *config, void *data)
+extern "C" int initWebOSSystemdFilter(struct flb_filter_instance *instance, struct flb_config *config, void *data)
 {
-    return Handler::getInstance().onInit(instance, config, data);
+    return WebOSSystemdFilter::getInstance().onInit(instance, config, data);
 }
 
-extern "C" int exitHandler(void *data, struct flb_config *config)
+extern "C" int exitWebOSSystemdFilter(void *data, struct flb_config *config)
 {
-    return Handler::getInstance().onExit(data, config);
+    return WebOSSystemdFilter::getInstance().onExit(data, config);
 }
 
-extern "C" int filter(const void *data, size_t bytes, const char *tag, int tag_len, void **out_buf, size_t *out_size, struct flb_filter_instance *instance, void *context, struct flb_config *config)
+extern "C" int filterWebOSSystemd(const void *data, size_t bytes, const char *tag, int tag_len, void **out_buf, size_t *out_size, struct flb_filter_instance *instance, void *context, struct flb_config *config)
 {
-    return Handler::getInstance().onFilter(data, bytes, tag, tag_len, out_buf, out_size, instance, context, config);
+    return WebOSSystemdFilter::getInstance().onFilter(data, bytes, tag, tag_len, out_buf, out_size, instance, context, config);
 }
 
-Handler::Handler()
+WebOSSystemdFilter::WebOSSystemdFilter()
     : m_isRespawned(false),
       m_appLaunchPerfRecords(APPLAUNCHPERF_TIMEOUT_SEC),
       m_isBootTimePerfDone(false)
 {
-    setClassName("Handler");
+    setClassName("WebOSSystemdFilter");
     m_respawnedTime = { 0, 0 };
     m_deviceInfo = pbnjson::Object();
 }
 
-Handler::~Handler()
+WebOSSystemdFilter::~WebOSSystemdFilter()
 {
 }
 
-int Handler::onInit(struct flb_filter_instance *instance, struct flb_config *config, void *data)
+int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_config *config, void *data)
 {
     // Check isRespawned
     m_isRespawned = File::isFile(PATH_RESPAWNED);
@@ -136,40 +136,40 @@ int Handler::onInit(struct flb_filter_instance *instance, struct flb_config *con
     }
     if (isAppLaunchOn) {
         PLUGIN_INFO("Applaunch is On");
-        m_syslogIdentifier2handler["sam"] = std::bind(&Handler::handleSam, this, std::placeholders::_1, std::placeholders::_2);
-        registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&Handler::handleSamAppLaunch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        m_syslogIdentifier2handler["sam"] = std::bind(&WebOSSystemdFilter::handleSam, this, std::placeholders::_1, std::placeholders::_2);
+        registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&WebOSSystemdFilter::handleSamAppLaunch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     }
     if (isAppLaunchPerfOn) {
         PLUGIN_INFO("Applaunch_Perf is On");
-        m_syslogIdentifier2handler["sam"] = std::bind(&Handler::handleSam, this, std::placeholders::_1, std::placeholders::_2);
-        registerRegexAndHandler(REGEX_ApiLaunchCall, std::bind(&Handler::handleSamAppLaunchPerf_begin, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-        registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&Handler::handleSamAppLaunchPerf_end, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        m_syslogIdentifier2handler["sam"] = std::bind(&WebOSSystemdFilter::handleSam, this, std::placeholders::_1, std::placeholders::_2);
+        registerRegexAndHandler(REGEX_ApiLaunchCall, std::bind(&WebOSSystemdFilter::handleSamAppLaunchPerf_begin, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&WebOSSystemdFilter::handleSamAppLaunchPerf_end, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     }
     if (isLoginLogoutOn) {
         PLUGIN_INFO("Login/Logout is On");
-        m_syslogIdentifier2handler["pamlogin"] = std::bind(&Handler::handlePamlogin, this, std::placeholders::_1, std::placeholders::_2);
+        m_syslogIdentifier2handler["pamlogin"] = std::bind(&WebOSSystemdFilter::handlePamlogin, this, std::placeholders::_1, std::placeholders::_2);
     }
     if (isCrashOn) {
         PLUGIN_INFO("Crash is On");
-        m_syslogIdentifier2handler["systemd-coredump"] = std::bind(&Handler::handleSystemdCoredump, this, std::placeholders::_1, std::placeholders::_2);
+        m_syslogIdentifier2handler["systemd-coredump"] = std::bind(&WebOSSystemdFilter::handleSystemdCoredump, this, std::placeholders::_1, std::placeholders::_2);
     }
     if (isBootTimePerfOn) {
         PLUGIN_INFO("Boottime_Perf is On");
-        m_syslogIdentifier2handler["sam"] = std::bind(&Handler::handleSam, this, std::placeholders::_1, std::placeholders::_2);
-        registerRegexAndHandler(REGEX_RuntimeInfo, std::bind(&Handler::handleSamBootTimePerf_begin, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-        registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&Handler::handleSamBootTimePerf_end, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        m_syslogIdentifier2handler["sam"] = std::bind(&WebOSSystemdFilter::handleSam, this, std::placeholders::_1, std::placeholders::_2);
+        registerRegexAndHandler(REGEX_RuntimeInfo, std::bind(&WebOSSystemdFilter::handleSamBootTimePerf_begin, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        registerRegexAndHandler(REGEX_SetLifeStatus, std::bind(&WebOSSystemdFilter::handleSamBootTimePerf_end, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     }
     return 0;
 }
 
-int Handler::onExit(void *context, struct flb_config *config)
+int WebOSSystemdFilter::onExit(void *context, struct flb_config *config)
 {
     PLUGIN_INFO();
 
     return 0;
 }
 
-int Handler::onFilter(const void *data, size_t bytes, const char *tag, int tag_len, void **out_buf, size_t *out_size, struct flb_filter_instance *instance, void *context, struct flb_config *config)
+int WebOSSystemdFilter::onFilter(const void *data, size_t bytes, const char *tag, int tag_len, void **out_buf, size_t *out_size, struct flb_filter_instance *instance, void *context, struct flb_config *config)
 {
     struct flb_time tm;
     msgpack_object* mapObj;
@@ -228,7 +228,7 @@ int Handler::onFilter(const void *data, size_t bytes, const char *tag, int tag_l
     return FLB_FILTER_MODIFIED;
 }
 
-void Handler::registerRegexAndHandler(const string& regex, MessageHandler handler)
+void WebOSSystemdFilter::registerRegexAndHandler(const string& regex, MessageHandler handler)
 {
     auto it = m_regex2handlers.find(regex);
     if (it != m_regex2handlers.end()) {
@@ -238,7 +238,7 @@ void Handler::registerRegexAndHandler(const string& regex, MessageHandler handle
     }
 }
 
-bool Handler::packCommonMsg(msgpack_unpacked* result, flb_time* timestamp, msgpack_packer* packer, size_t mapSize)
+bool WebOSSystemdFilter::packCommonMsg(msgpack_unpacked* result, flb_time* timestamp, msgpack_packer* packer, size_t mapSize)
 {
     msgpack_pack_array(packer, 2);
     msgpack_pack_object(packer, result->data.via.array.ptr[0]); // time
@@ -249,7 +249,7 @@ bool Handler::packCommonMsg(msgpack_unpacked* result, flb_time* timestamp, msgpa
     return true;
 }
 
-void Handler::handleSamAppLaunch(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
+void WebOSSystemdFilter::handleSamAppLaunch(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
 {
     const string& instanceId = match[1];
     const string& appId = match[2];
@@ -283,7 +283,7 @@ void Handler::handleSamAppLaunch(smatch& match, msgpack_unpacked* result, msgpac
     PLUGIN_INFO("[appLaunch] %s", appLaunch.stringify().c_str());
 }
 
-void Handler::handleSamAppLaunchPerf_begin(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
+void WebOSSystemdFilter::handleSamAppLaunchPerf_begin(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
 {
     msgpack_object* map;
     flb_time timestamp;
@@ -298,7 +298,7 @@ void Handler::handleSamAppLaunchPerf_begin(smatch& match, msgpack_unpacked* resu
     PLUGIN_DEBUG("Timestamp(%ld.%03ld)", timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000));
 }
 
-void Handler::handleSamAppLaunchPerf_end(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
+void WebOSSystemdFilter::handleSamAppLaunchPerf_end(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
 {
     const string& instanceId = match[1];
     const string& appId = match[2];
@@ -361,7 +361,7 @@ void Handler::handleSamAppLaunchPerf_end(smatch& match, msgpack_unpacked* result
     PLUGIN_INFO("[appLaunchPerf] %s", appLaunchPerf.stringify().c_str());
 }
 
-void Handler::handleSamBootTimePerf_begin(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
+void WebOSSystemdFilter::handleSamBootTimePerf_begin(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
 {
     if (m_isBootTimePerfDone || m_isRespawned)
         return;
@@ -375,7 +375,7 @@ void Handler::handleSamBootTimePerf_begin(smatch& match, msgpack_unpacked* resul
     PLUGIN_DEBUG("displayId(%s)", displayId.c_str());
 }
 
-void Handler::handleSamBootTimePerf_end(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
+void WebOSSystemdFilter::handleSamBootTimePerf_end(smatch& match, msgpack_unpacked* result, msgpack_packer* packer)
 {
     if (m_isBootTimePerfDone || m_isRespawned)
         return;
@@ -430,7 +430,7 @@ Done:
     m_isBootTimePerfDone = true;
 }
 
-void Handler::handleSam(msgpack_unpacked* result, msgpack_packer* packer)
+void WebOSSystemdFilter::handleSam(msgpack_unpacked* result, msgpack_packer* packer)
 {
     string message;
     if (!MSGPackUtil::getValue(&result->data.via.array.ptr[1], "MESSAGE", message))
@@ -444,7 +444,7 @@ void Handler::handleSam(msgpack_unpacked* result, msgpack_packer* packer)
     }
 }
 
-void Handler::handlePamlogin(msgpack_unpacked* result, msgpack_packer* packer)
+void WebOSSystemdFilter::handlePamlogin(msgpack_unpacked* result, msgpack_packer* packer)
 {
     flb_time timestamp;
     string sourceTime;
@@ -471,7 +471,7 @@ void Handler::handlePamlogin(msgpack_unpacked* result, msgpack_packer* packer)
     PLUGIN_INFO("[%s] %s", typeStr.c_str(), typeObj.stringify().c_str());
 }
 
-void Handler::handleSystemdCoredump(msgpack_unpacked* result, msgpack_packer* packer)
+void WebOSSystemdFilter::handleSystemdCoredump(msgpack_unpacked* result, msgpack_packer* packer)
 {
     flb_time timestamp;
     int signalNo;
