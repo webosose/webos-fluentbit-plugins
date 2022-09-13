@@ -27,7 +27,6 @@
 
 #include "FluentBit.h"
 
-#include "PerfRecordList.h"
 #include "interface/IClassName.h"
 #include "interface/ISingleton.h"
 
@@ -51,6 +50,7 @@ private:
 
     bool packCommonMsg(msgpack_unpacked* result, flb_time* timestamp, msgpack_packer* packer, size_t mapSize);
     void handlePowerOn(msgpack_unpacked* result, msgpack_packer* packer);
+    void handleAppExecution(msgpack_unpacked* result, msgpack_packer* packer);
 
     static const string PATH_RESPAWNED;
 
@@ -61,6 +61,7 @@ private:
     // For each module, register handlers : sam, bootd, pamlogin, ..
     map<string, SyslogIdentifierHandler> m_syslogIdentifier2handler;
     bool m_isPowerOnDone;
+    map<string, struct flb_time> m_instanceId2timestamp;
 };
 
 #endif

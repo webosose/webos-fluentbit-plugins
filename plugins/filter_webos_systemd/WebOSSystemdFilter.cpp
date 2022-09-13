@@ -19,13 +19,13 @@
 #include <glib.h>
 #include <pwd.h>
 
-#include "PerfRecord.h"
-#include "PerfRecordList.h"
 #include "util/File.h"
 #include "util/LinuxUtil.h"
 #include "util/Logger.h"
 #include "util/MSGPackUtil.h"
 #include "util/Time.h"
+
+#define EPOCHTIME_20220101      1640995200
 
 const string WebOSSystemdFilter::PATH_RESPAWNED = "/tmp/fluentbit-respawned";
 
@@ -108,6 +108,7 @@ int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_
     PLUGIN_INFO("webosBuildId : %s", webosBuildId.c_str());
 
     m_syslogIdentifier2handler["LunaSysService"] = std::bind(&WebOSSystemdFilter::handlePowerOn, this, std::placeholders::_1, std::placeholders::_2);
+    m_syslogIdentifier2handler["sam"] = std::bind(&WebOSSystemdFilter::handleAppExecution, this, std::placeholders::_1, std::placeholders::_2);
     return 0;
 }
 
@@ -218,4 +219,60 @@ void WebOSSystemdFilter::handlePowerOn(msgpack_unpacked* result, msgpack_packer*
     MSGPackUtil::putValue(packer, "event", "powerOn");
     m_isPowerOnDone = true;
     PLUGIN_INFO("Event (powerOn)");
+}
+
+void WebOSSystemdFilter::handleAppExecution(msgpack_unpacked* result, msgpack_packer* packer)
+{
+    string message;
+    if (!MSGPackUtil::getValue(&result->data.via.array.ptr[1], "MESSAGE", message))
+        return;
+    PLUGIN_DEBUG("MESSAGE: %s", message.c_str());
+    smatch match;
+    if (!regex_match(message, match, regex("^\\[I\\]\\[RunningApp\\]\\[setLifeStatus\\]\\[([[:print:]]+)\\] Changed: ([[:print:]]+) \\(([[:alpha:]]+) ==> ([[:alpha:]]+)\\)")))
+        return;
+
+    const string& instanceId = match[1];
+    const string& appId = match[2];
+    const string& prevState = match[3];
+    const string& currState = match[4];
+
+    if (prevState != "foreground" && currState != "foreground")
+        return;
+
+    msgpack_object* map;
+    flb_time timestamp;
+    flb_time_pop_from_msgpack(&timestamp, result, &map);
+    if (timestamp.tm.tv_sec < EPOCHTIME_20220101) {
+        // To get the time spent using an app, the timestamps of start time and end time must have the same type.
+        // At the beginning of booting, the monotonic time from the booting is recorded, and then the real time comes.
+        // So, only the time after 20220101 is considered as normal time, and calculate the spent times.
+        PLUGIN_WARN("Not normal timestamp(%10ld.%03d) %s (%s)", timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000), instanceId.c_str(), appId.c_str());
+        return;
+    }
+
+    if (currState == "foreground") {
+        PLUGIN_INFO("Foreground (%10ld.%03d) %s (%s)", timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000), instanceId.c_str(), appId.c_str());
+        m_instanceId2timestamp[instanceId] = timestamp;
+        return;
+    }
+    // prevState == foreground
+    auto it = m_instanceId2timestamp.find(instanceId);
+    if (it == m_instanceId2timestamp.end()) {
+        PLUGIN_WARN("Cannot find start time for %s (%s)", instanceId.c_str(), appId.c_str());
+        return;
+    }
+    flb_time duration;
+    flb_time_diff(&timestamp, &it->second, &duration);
+    PLUGIN_INFO("Background (%10ld.%03d) %s (%s)", timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000), instanceId.c_str(), appId.c_str());
+    // ignore 0 sec or less than 1 sec.
+    if (duration.tm.tv_sec == 0)
+        return;
+    if (!packCommonMsg(result, &timestamp, packer, 5))
+        return;
+    MSGPackUtil::putValue(packer, "event", "appExecution");
+    MSGPackUtil::putValue(packer, "main", appId);
+    JValue extra = Object();
+    extra.put("durationSec", duration.tm.tv_sec);
+    MSGPackUtil::putValue(packer, "extra", extra);
+    PLUGIN_INFO("Event (appExecution), Main (%s), Extra %s", appId.c_str(), extra.stringify().c_str());
 }
