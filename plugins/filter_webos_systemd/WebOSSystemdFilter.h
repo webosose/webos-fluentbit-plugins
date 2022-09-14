@@ -52,6 +52,7 @@ private:
     void handlePowerOn(msgpack_unpacked* result, msgpack_packer* packer);
     void handleAppExecution(msgpack_unpacked* result, msgpack_packer* packer);
     void handleAppUsage(msgpack_unpacked* result, msgpack_packer* packer);
+    void handleErrorLog(msgpack_unpacked* result, msgpack_packer* packer, const string& priority);
 
     static const string PATH_RESPAWNED;
 

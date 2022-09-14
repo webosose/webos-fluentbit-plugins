@@ -130,7 +130,7 @@ int WebOSSystemdFilter::onFilter(const void *data, size_t bytes, const char *tag
     msgpack_sbuffer sbuffer;
     msgpack_packer packer;
     string syslogIdentifier;
-    string message;
+    string priority;
 
     /* Create msgpack buffer */
     msgpack_sbuffer_init(&sbuffer);
@@ -163,6 +163,14 @@ int WebOSSystemdFilter::onFilter(const void *data, size_t bytes, const char *tag
         if (mapObj->type != MSGPACK_OBJECT_MAP) {
             PLUGIN_WARN("Not map : %d", mapObj->type);
             continue;
+        }
+        // 0: Emergency, 1: Alert, 2: Critical, 3: Error, ..
+        if (MSGPackUtil::getValue(mapObj, "PRIORITY", priority)) {
+            if (priority <= "3") {
+                handleErrorLog(&result, &packer, priority);
+                // Return here, because all info except 'error log' is extracted from info-level log.
+                continue;
+            }
         }
         if (!MSGPackUtil::getValue(mapObj, "SYSLOG_IDENTIFIER", syslogIdentifier)) {
             continue;
@@ -325,4 +333,36 @@ void WebOSSystemdFilter::handleAppUsage(msgpack_unpacked* result, msgpack_packer
     MSGPackUtil::putValue(packer, "sub", sub);
     MSGPackUtil::putValue(packer, "extra", extra);
     PLUGIN_INFO("Event (%s), Main (%s), Sub (%s), Extra %s", event.c_str(), main.c_str(), sub.c_str(), extra.stringify().c_str());
+}
+
+void WebOSSystemdFilter::handleErrorLog(msgpack_unpacked* result, msgpack_packer* packer, const string& priority)
+{
+    // [20.258192000, {"PRIORITY"=>"3", "_TRANSPORT"=>"syslog", "SYSLOG_IDENTIFIER"=>"wpa_supplicant", "MESSAGE"=>"dbus: wpa_dbus_property_changed: no property SessionLength in object /fi/w1/wpa_supplicant1/Interfaces/0", ..}]
+    // [1663118699.932891000, {"_TRANSPORT"=>"syslog", "PRIORITY"=>"3", "SYSLOG_IDENTIFIER"=>"WebAppMgr", "MESSAGE"=>"[] [pmlog] wam.log ERROR {} E[868:930:ne/wayland/window.cc(275)] "Shell type not set. Setting it to TopLevel\n"", ..}]
+    // [1663118579.977513000, {"PRIORITY"=>"6", "_TRANSPORT"=>"stdout", "SYSLOG_IDENTIFIER"=>"connman.sh", "MESSAGE"=>"connmand[1057]: wlan0 {RX} 3 packets 288 bytes", ..}]
+    // [1663119423.924824000, {"PRIORITY"=>"4", "_TRANSPORT"=>"kernel", "SYSLOG_IDENTIFIER"=>"kernel", "MESSAGE"=>"IPv4: martian source 192.168.0.255 from 192.168.0.15, on dev wlan0", .."}]
+
+    string transport;
+    string syslogIdentifier;
+    string message;
+    if (!MSGPackUtil::getValue(&result->data.via.array.ptr[1], "_TRANSPORT", transport))
+        PLUGIN_WARN("Not exist: _TRANSPORT");
+    if (!MSGPackUtil::getValue(&result->data.via.array.ptr[1], "SYSLOG_IDENTIFIER", syslogIdentifier))
+        PLUGIN_WARN("Not exist: SYSLOG_IDENTIFIER");
+    if (! MSGPackUtil::getValue(&result->data.via.array.ptr[1], "MESSAGE", message))
+        PLUGIN_WARN("Not exist: MESSAGE");
+
+    msgpack_object* map;
+    flb_time timestamp;
+    flb_time_pop_from_msgpack(&timestamp, result, &map);
+    if (!packCommonMsg(result, &timestamp, packer, 6))
+        return;
+    MSGPackUtil::putValue(packer, "event", "error");
+    MSGPackUtil::putValue(packer, "main", transport);
+    MSGPackUtil::putValue(packer, "sub", syslogIdentifier);
+    JValue extra = Object();
+    extra.put("message", message);
+    extra.put("priority", priority);
+    MSGPackUtil::putValue(packer, "extra", extra);
+    PLUGIN_INFO("Event (error), Main (%s), Sub (%s), Extra %s", transport.c_str(), syslogIdentifier.c_str(), extra.stringify().c_str());
 }
