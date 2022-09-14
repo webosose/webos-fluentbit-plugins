@@ -20,6 +20,7 @@
 #include <pwd.h>
 
 #include "util/File.h"
+#include "util/JValueUtil.h"
 #include "util/LinuxUtil.h"
 #include "util/Logger.h"
 #include "util/MSGPackUtil.h"
@@ -109,6 +110,7 @@ int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_
 
     m_syslogIdentifier2handler["LunaSysService"] = std::bind(&WebOSSystemdFilter::handlePowerOn, this, std::placeholders::_1, std::placeholders::_2);
     m_syslogIdentifier2handler["sam"] = std::bind(&WebOSSystemdFilter::handleAppExecution, this, std::placeholders::_1, std::placeholders::_2);
+    m_syslogIdentifier2handler["WebAppMgr"] = std::bind(&WebOSSystemdFilter::handleAppUsage, this, std::placeholders::_1, std::placeholders::_2);
     return 0;
 }
 
@@ -275,4 +277,52 @@ void WebOSSystemdFilter::handleAppExecution(msgpack_unpacked* result, msgpack_pa
     extra.put("durationSec", duration.tm.tv_sec);
     MSGPackUtil::putValue(packer, "extra", extra);
     PLUGIN_INFO("Event (appExecution), Main (%s), Extra %s", appId.c_str(), extra.stringify().c_str());
+}
+
+void WebOSSystemdFilter::handleAppUsage(msgpack_unpacked* result, msgpack_packer* packer)
+{
+    string message;
+    if (!MSGPackUtil::getValue(&result->data.via.array.ptr[1], "MESSAGE", message))
+        return;
+    PLUGIN_DEBUG("MESSAGE: %s", message.c_str());
+    smatch match;
+    // [] [pmlog] com.webos.app.home DATA_COLLECTION { "main":"com.webos.app.home", "sub": "appbar/launchpad", "event": "click", "extra": { "clickeditem":"com.webos.app.settings" }}
+    // [] [pmlog] com.webos.app.home DATA_COLLECTION { "main":"com.webos.app.home", "sub": "launchpad", "event": "swipe", "extra": { "swipedirection":"left/right" }}
+    // [] [pmlog] com.webos.app.home DATA_COLLECTION { "main":"com.webos.app.home", "sub": "launchpad", "event": "pagination", "extra":{ "pagenumber":"1/2" }} free style msg
+    if (!regex_match(message, match, regex("^\\[\\] \\[pmlog\\] ([[:graph:]]+) DATA_COLLECTION ([[:print:]]+)")))
+        return;
+
+    const string& appId = match[1];
+    const string& logmsg = match[2];
+    size_t jsonEndPos = logmsg.rfind("}");
+    if (jsonEndPos == string::npos) {
+        PLUGIN_WARN("Not json format: %s", logmsg.c_str());
+        return;
+    }
+    const string& json = logmsg.substr(0, jsonEndPos+1);
+    PLUGIN_INFO("%s %s %s", appId.c_str(), json.c_str(), logmsg.substr(jsonEndPos+1).c_str());
+    JValue jsonObj = JDomParser::fromString(json);
+    if (jsonObj.isNull()) {
+        PLUGIN_WARN("Json format error: %s", json.c_str());
+        return;
+    }
+
+    msgpack_object* map;
+    flb_time timestamp;
+    flb_time_pop_from_msgpack(&timestamp, result, &map);
+    if (!packCommonMsg(result, &timestamp, packer, 6))
+        return;
+    string event;
+    string main;
+    string sub;
+    JValue extra = Object();
+    (void) JValueUtil::getValue(jsonObj, "event", event);
+    (void) JValueUtil::getValue(jsonObj, "main", main);
+    (void) JValueUtil::getValue(jsonObj, "sub", sub);
+    (void) JValueUtil::getValue(jsonObj, "extra", extra);
+    MSGPackUtil::putValue(packer, "event", event);
+    MSGPackUtil::putValue(packer, "main", main);
+    MSGPackUtil::putValue(packer, "sub", sub);
+    MSGPackUtil::putValue(packer, "extra", extra);
+    PLUGIN_INFO("Event (%s), Main (%s), Sub (%s), Extra %s", event.c_str(), main.c_str(), sub.c_str(), extra.stringify().c_str());
 }

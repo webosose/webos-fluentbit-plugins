@@ -51,6 +51,7 @@ private:
     bool packCommonMsg(msgpack_unpacked* result, flb_time* timestamp, msgpack_packer* packer, size_t mapSize);
     void handlePowerOn(msgpack_unpacked* result, msgpack_packer* packer);
     void handleAppExecution(msgpack_unpacked* result, msgpack_packer* packer);
+    void handleAppUsage(msgpack_unpacked* result, msgpack_packer* packer);
 
     static const string PATH_RESPAWNED;
 
