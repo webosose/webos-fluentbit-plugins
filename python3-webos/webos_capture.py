@@ -15,6 +15,7 @@ DEFAULT_INFO='/tmp/webos_info.txt'
 DEFAULT_DUMP='/tmp/webos_dump.txt'
 DEFAULT_MESSAGES = '/tmp/webos_messages.tgz'
 DEFAULT_SCREENSHOT = '/tmp/webos_screenshot.jpg'
+DEFAULT_TCSTEPS = '/tmp/webos_tcsteps.txt'
 
 
 class WebOSCapture:
@@ -122,6 +123,16 @@ class WebOSCapture:
         print('Capture screenshot : {}'.format(file))
         return
 
+    def capture_tcsteps(self, file=DEFAULT_TCSTEPS):
+        if os.path.exists('/run/systemd/journal/socket'):
+            command = "journalctl -q -t PmLogCtl -u dropbear | tail -n 500 > {}".format(file)
+        else:
+            command = "zgrep -h 'qa-tools\|automation-test' /var/log/messages* | tail -n 500 > {}".format(file)
+        common.debug(command)
+        subprocess.check_output(command, shell=True, encoding='utf-8')
+        print('Capture tc steps info : {}'.format(file))
+        return
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=os.path.basename(__file__))
@@ -130,6 +141,7 @@ if __name__ == "__main__":
     parser.add_argument('--coredump', type=str, nargs='*', help='capture coredump info')
     parser.add_argument('--messages', type=str, help='capture /var/log/messages*')
     parser.add_argument('--screenshot', type=str, help='capture screenshot')
+    parser.add_argument('--tcsteps',  type=str, help='capture tc steps info')
 
     args = parser.parse_args()
     if args.journald is not None:
@@ -142,3 +154,5 @@ if __name__ == "__main__":
         WebOSCapture.instance().capture_messages(args.messages)
     if args.screenshot is not None:
         WebOSCapture.instance().capture_screenshot(args.screenshot)
+    if args.tcsteps is not None:
+        WebOSCapture.instance().capture_tcsteps(args.tcsteps)

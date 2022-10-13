@@ -296,10 +296,19 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
             continue;
         }
 
+        string pattern = "\"";
+        string replace = "\\\"";
+        string escapedDesc = description;
+        string::size_type pos = 0;
+        string::size_type offset = 0;
+        while ((pos = escapedDesc.find(pattern, offset)) != string::npos) {
+            escapedDesc.replace(escapedDesc.begin() + pos, escapedDesc.begin() + pos + pattern.size(), replace);
+            offset = pos + replace.size();
+        }
         command = "webos_issue.py --summary \'" + summary + "\' "
                 + (username.empty() ? "" : "--id '" + username + "' ")
                 + (password.empty() ? "" : "--pw '" + password + "' ")
-                + (description.empty() ? "" : "--description '" + description + "' ")
+                + (description.empty() ? "" : "--description \"" + escapedDesc + "\" ")
                 + (priority.empty() ? "" : "--priority " + priority + " ")
                 + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
                 + (isCrashReport ? "--unique-summary --attach-crashcounter --without-sysinfo --without-screenshot --upload-files \'" + coredump + "\' \'" + crashreport + "\' " + journals + " " + messages + " " + screenshot + " " + sysinfo
