@@ -40,7 +40,9 @@
 #define KEY_PASSWORD            "password"
 #define KEY_PRIORITY            "priority"
 #define KEY_REPRODUCIBILITY     "reproducibility"
-#define KEY_COMM_PID            "comm.pid"
+#define KEY_COMM                "comm"
+#define KEY_EXE                 "exe"
+#define KEY_PID                 "pid"
 #define KEY_COREDUMP            "coredump"
 #define KEY_CRASHREPORT         "crashreport"
 #define KEY_JOURNALS            "journals"
@@ -202,7 +204,9 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
     string priority;
     string reproducibility;
     // newly added for in_coredump
-    string commPid;
+    string comm;
+    string exe;
+    string pid;
     string coredump;
     string crashreport;
     string journals;
@@ -210,9 +214,6 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
     string screenshot;
     string sysinfo;
     string command;
-    string comm;
-    string pid;
-    string exe;
     string crashedFunc;
 
     if (m_isNFSMode) {
@@ -226,7 +227,7 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
         return;
     }
 
-    bool isCrashReport = (string::npos != string(tag, tag_len).find("crashinfo"));
+    bool isCrashReport = (string::npos != string(tag, tag_len).find("crash")); // crashd crashinfo
 
     msgpack_unpacked_init(&message);
     while (msgpack_unpack_next(&message, (const char*)data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
@@ -258,8 +259,14 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
         if (MSGPackUtil::getValue(payload, KEY_REPRODUCIBILITY, reproducibility)) {
             PLUGIN_INFO("reproducibility : %s", reproducibility.c_str());
         }
-        if (MSGPackUtil::getValue(payload, KEY_COMM_PID, commPid)) {
-            PLUGIN_INFO("%s : %s", KEY_COMM_PID, commPid.c_str());
+        if (MSGPackUtil::getValue(payload, KEY_COMM, comm)) {
+            PLUGIN_INFO("%s : %s", KEY_COMM, comm.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_EXE, exe)) {
+            PLUGIN_INFO("%s : %s", KEY_EXE, exe.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_PID, pid)) {
+            PLUGIN_INFO("%s : %s", KEY_PID, pid.c_str());
         }
         if (MSGPackUtil::getValue(payload, KEY_COREDUMP, coredump)) {
             PLUGIN_INFO("%s : %s", KEY_COREDUMP, coredump.c_str());
@@ -280,11 +287,6 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
             PLUGIN_INFO("%s : %s", KEY_SYSINFO, sysinfo.c_str());
         }
 
-        if (parseCoredumpComm(coredump, comm, pid, exe) == -1) {
-            PLUGIN_ERROR("Fail to parse coredump file");
-            continue;
-        }
-        PLUGIN_INFO("comm : (%s), pid : (%s), exe (%s)", comm.c_str(), pid.c_str(), exe.c_str());
         if (checkExeTime(exe) == -1) {
             PLUGIN_WARN("Not official exe file");
             continue;
@@ -293,13 +295,6 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
             PLUGIN_WARN("The exe file exists in exception list.");
             continue;
         }
-        if (summary.empty()) {
-            if (!getCrashedFunction(crashreport.c_str(), comm, crashedFunc)) {
-                PLUGIN_WARN("Failed to find crashed function");
-                crashedFunc = "";
-            }
-            summary = "[RDX_CRASH][" + m_distro + "] " + exe + " " + crashedFunc;
-        }
 
         command = "webos_issue.py --summary \'" + summary + "\' "
                 + (username.empty() ? "" : "--id '" + username + "' ")
@@ -307,7 +302,7 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
                 + (description.empty() ? "" : "--description '" + description + "' ")
                 + (priority.empty() ? "" : "--priority " + priority + " ")
                 + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
-                + (isCrashReport ? "--unique-summary --attach-crashcounter --without-sysinfo --without-screenshot --upload-files \'" + coredump + "\' " + crashreport + " " + journals + " " + messages + " " + screenshot + " " + sysinfo
+                + (isCrashReport ? "--unique-summary --attach-crashcounter --without-sysinfo --without-screenshot --upload-files \'" + coredump + "\' \'" + crashreport + "\' " + journals + " " + messages + " " + screenshot + " " + sysinfo
                                  : "--enable-popup " + (upload_files.empty() ? "" : "--upload-files " + upload_files));
         PLUGIN_INFO("command : %s", command.c_str());
 
@@ -432,167 +427,6 @@ int JiraHandler::checkOpkgChecksum()
         return 0;
     else
         return -1;
-}
-
-int JiraHandler::parseCoredumpComm(const string& coredump, string& comm, string& pid, string& exe)
-{
-    // template : core | comm | uid | boot id | pid | timestamp
-    // example  : core.coreexam.0.5999de4a29fb442eb75fb52f8eb64d20.1476.1615253999000000.xz
-
-    ssize_t buflen, keylen, vallen;
-    char exe_str[STR_LEN];
-    char *buf, *key, *val;
-
-    PLUGIN_INFO("Full param : (%s)", coredump.c_str());
-
-    // Determine the length of the buffer needed.
-    buflen = listxattr(coredump.c_str(), NULL, 0);
-    if (buflen == -1) {
-        PLUGIN_ERROR("Failed listxattr");
-        return -1;
-    }
-    if (buflen == 0) {
-        PLUGIN_ERROR("No attributes");
-        return -1;
-    }
-
-    // Allocate the buffer.
-    buf = (char*)malloc(buflen);
-    if (buf == NULL) {
-        PLUGIN_ERROR("Failed malloc");
-        return -1;
-    }
-
-    // Copy the list of attribute keys to the buffer
-    buflen = listxattr(coredump.c_str(), buf, buflen);
-    PLUGIN_DEBUG("buflen : (%d)", buflen);
-
-    if (buflen == -1) {
-        return -1;
-    } else if (buflen == 0) {
-        PLUGIN_ERROR("No attributes full : (%s)", coredump.c_str());
-        return -1;
-    }
-
-    key = buf;
-    while (0 < buflen) {
-
-        // Output attribute key
-        PLUGIN_DEBUG("key : (%s)", key);
-
-        // Determine length of the value
-        vallen = getxattr(coredump.c_str(), key, NULL, 0);
-
-        if (vallen == -1) {
-            PLUGIN_ERROR("Failed getxattr");
-        } else if (vallen == 0) {
-            PLUGIN_ERROR("No value");
-        } else {
-            val = (char*)malloc(vallen + 1);
-            if (val == NULL) {
-                PLUGIN_ERROR("Failed malloc");
-                return -1;
-            }
-
-            // Copy value to buffer
-            vallen = getxattr(coredump.c_str(), key, val, vallen);
-            if (vallen == -1) {
-                PLUGIN_ERROR("Failed getxattr");
-            } else {
-                // Check attribute value (exe, pid)
-                val[vallen] = 0;
-                PLUGIN_DEBUG("val : (%s)", val);
-
-                if (strstr(key, "pid") != NULL)
-                    pid = val;
-                if (strstr(key, "exe") != NULL)
-                    exe = val;
-            }
-            free(val);
-        }
-
-        // Forward to next attribute key.
-        keylen = strlen(key) + 1;
-        buflen -= keylen;
-        key += keylen;
-    }
-    free(buf);
-
-    strncpy(exe_str, exe.c_str(), STR_LEN);
-    exe_str[STR_LEN-1] = '\0';
-
-    char *ptr = strtok(exe_str, "/");
-    while (ptr != NULL)
-    {
-        PLUGIN_DEBUG("ptr : (%s)", ptr);
-        if (strcmp(ptr, "usr") != 0 && strcmp(ptr, "bin") != 0 && strcmp(ptr, "sbin") != 0) {
-            comm = ptr;
-            break;
-        }
-        ptr = strtok(NULL, "/");
-    }
-
-    return 0;
-}
-
-bool JiraHandler::getCrashedFunction(const string& crashreport, const string& comm, string& func)
-{
-    // A crashreport contains the following stacktrace.
-    // The first line here isn't really helpful: __libc_do_syscall (libc.so.6 + 0x1ade6)
-    // So here try to fina a meaningful line: _Z5funcCv (coredump_example + 0xb6e)
-    // ...
-    // Found module coredump_example with build-id: 331c2591ed23996f271990c41f3775874eff0ba7
-    // Stack trace of thread 13609:
-    //   #0  0x00000000f7508de6 __libc_do_syscall (libc.so.6 + 0x1ade6)
-    //   #1  0x00000000f7517416 __libc_signal_restore_set (libc.so.6 + 0x29416)
-    //   #2  0x00000000f7508922 __GI_abort (libc.so.6 + 0x1a922)
-    //   #3  0x00000000f753e834 __libc_message (libc.so.6 + 0x50834)
-    //   #4  0x00000000f7543606 malloc_printerr (libc.so.6 + 0x55606)
-    //   #5  0x00000000f7544bd2 _int_free (libc.so.6 + 0x56bd2)
-    //   #6  0x0000000000508b6e _Z5funcCv (coredump_example + 0xb6e)
-
-    std::ifstream contents(crashreport);
-    if (!contents) {
-        PLUGIN_ERROR("File open error %s (%d)", crashreport.c_str(), errno);
-        return false;
-    }
-    string line;
-    smatch match;
-    bool matched = false;
-    while (getline(contents, line)) {
-        PLUGIN_DEBUG(" < %s", line.c_str());
-        if (string::npos == line.find("Stack trace of thread"))
-            continue;
-        break;
-    }
-    while (getline(contents, line)) {
-        // #0  0x0000000000487ba4 _Z5funcCv (coredump_example + 0xba4)
-        // #0  0x00000000b6cb3c26 n/a (libc.so.6 + 0x1ac26)
-        // #0  0x00000000f7508de6 __libc_do_syscall (libc.so.6 + 0x1ade6)
-        // [:graph:] = letters, digits, and punctuation
-        // [:print:] = [:graph:] and space
-        if (!regex_match(line, match, regex("\\s*#([0-9]+)\\s+0x[0-9a-zA-Z]+\\s+([[:graph:]]+)\\s+([[:print:]]+)"))) {
-            PLUGIN_INFO("Not matched: %s", line.c_str());
-            continue;
-        }
-        // string(match[3]) : (coredmp_example + 0xba4)
-        // string(match[2]) : _Z5funcCv
-        // Summary: /usr/bin/coredump_example 'in _Z5funcCv (coredmp_example + 0xba4)'
-        if (match.ready() && match.size() == 4) {
-            if (string(match[1]).find("0") == 0) {
-                PLUGIN_INFO("Matched with #0  : (%s)", string(match[0]).c_str());
-                func = string("in ") + string(match[2]) + " " + string(match[3]);
-                matched = true;
-            }
-            if (string(match[3]).find(comm, 1) == 1) {
-                PLUGIN_INFO("Matched with comm: (%s)", string(match[0]).c_str());
-                func = string("in ") + string(match[2]) + " " + string(match[3]);
-                matched = true;
-                break;
-            }
-        }
-    }
-    return matched;
 }
 
 int JiraHandler::checkExeTime(const string& exe)

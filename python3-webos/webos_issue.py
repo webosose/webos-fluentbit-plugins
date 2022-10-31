@@ -207,7 +207,7 @@ class WebOSIssue:
                 desc = "MESSAGES"
             elif basename.startswith('screenshot'):
                 desc = "SCREENSHOT"
-            elif basename.find('crashreport.txt') > 0:
+            elif basename.find('crashreport.txt') > 0 or basename.startswith('RDXD_'):
                 desc = "CRASHREPORT"
             elif basename.startswith("core"):
                 desc = "COREDUMP"
