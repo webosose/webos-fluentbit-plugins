@@ -35,7 +35,7 @@ public:
     static void putValue(msgpack_packer* packer, const string& key, const JValue& value);
     static void putValue(msgpack_packer* packer, const string& key, const string& value);
     static void putValue(msgpack_packer* packer, const string& key, const char* value);
-    static void putValue(msgpack_packer* packer, const string& key, int value);
+    static void putValue(msgpack_packer* packer, const string& key, int64_t value);
     static void putValue(msgpack_packer* packer, const string& key, double value);
     static void putValue(msgpack_packer* packer, const string& key, bool value);
 

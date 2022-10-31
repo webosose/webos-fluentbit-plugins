@@ -68,7 +68,7 @@ void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, const JVal
             break;
         case JV_NUM:
             // pbnjson does not distinguish integer from floating point (even if the serialized form is X.000000). This is by design.
-            putValue(packer, kv.first.asString(), kv.second.asNumber<int>());
+            putValue(packer, kv.first.asString(), kv.second.asNumber<int64_t>());
             break;
         case JV_STR:
             putValue(packer, kv.first.asString(), kv.second.asString());
@@ -106,10 +106,10 @@ void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, const char
     putValue(packer, key, string(value));
 }
 
-void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, int value)
+void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, int64_t value)
 {
     packStr(packer, key);
-    msgpack_pack_int(packer, value);
+    msgpack_pack_int64(packer, value);
 }
 
 void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, double value)

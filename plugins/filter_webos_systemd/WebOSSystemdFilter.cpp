@@ -282,7 +282,7 @@ void WebOSSystemdFilter::handleAppExecution(msgpack_unpacked* result, msgpack_pa
     MSGPackUtil::putValue(packer, "event", "appExecution");
     MSGPackUtil::putValue(packer, "main", appId);
     JValue extra = Object();
-    extra.put("durationSec", duration.tm.tv_sec);
+    extra.put("durationSec", (int64_t)duration.tm.tv_sec);
     MSGPackUtil::putValue(packer, "extra", extra);
     PLUGIN_INFO("Event (appExecution), Main (%s), Extra %s", appId.c_str(), extra.stringify().c_str());
 }
