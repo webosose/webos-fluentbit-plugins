@@ -3,6 +3,7 @@
 import argparse
 import os
 import requests
+import logging
 
 import webos_common as common
 
@@ -56,17 +57,17 @@ class WebOSUploader:
         summary = summary[summary.find(' '):].strip()
         summary = requests.utils.quote(summary, safe='')
         url = url + '/' + summary
-        common.debug('PATCH {}'.format(url))
+        logging.info('PATCH {}'.format(url))
         response = requests.patch(url)
-        common.debug('{}, count {}'.format(response.status_code, response.text))
+        logging.info('{}, count {}'.format(response.status_code, response.text))
         return response.text
 
     def sync_config(self, url=DEFAULT_SERVER_CONFIG):
-        common.info('GET {}'.format(url))
+        logging.info('GET {}'.format(url))
         response = requests.get(url)
-        common.info('{}'.format(response.status_code))
+        logging.info('{}'.format(response.status_code))
         if not response.ok:
-            common.warn(response.text)
+            logging.warning(response.text)
             return
         common.sync_config(response.json())
 
@@ -77,14 +78,17 @@ if __name__ == "__main__":
     parser.add_argument('--url',           type=str, default=DEFAULT_SERVER_UPLOAD, help='File server URL')
     parser.add_argument('--upload-files',  type=str, nargs='*', help='Files for uploading.')
     parser.add_argument('--sync-config',   action='store_true', help='Sync config with server')
+    parser.add_argument('--log-level',     type=str, help='Set log level [debug|info|warning|error]. The dafault value is warning.')
 
     args = parser.parse_args()
+    if args.log_level is not None:
+        common.set_log_level(args.log_level)
 
     if args.sync_config:
         try:
             WebOSUploader.instance().sync_config()
         except Exception as ex:
-            common.warn(ex)
+            logging.warning(ex)
         exit(1)
 
     print("WARNING: Recommend to use this with webos_issue.py. Uploaded files can be deleted based on status of jira ticket.")

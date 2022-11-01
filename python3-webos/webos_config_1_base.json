@@ -277,8 +277,8 @@
         }
     },
     "developer": {
-        "debug": true,
-        "info": true
+        "debug": false,
+        "info": false
     },
     "deviceName": {
         "raspberrypi4": "OSE-RPi4",

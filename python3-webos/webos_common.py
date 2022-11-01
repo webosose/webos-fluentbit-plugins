@@ -5,6 +5,7 @@ import datetime
 import json
 import base64
 import hashlib
+import logging
 
 from sys import stdout
 from cryptography.fernet import Fernet
@@ -122,15 +123,11 @@ def log(header, message):
     print('[{}] {}'.format(header, message))
 
 def debug(message, force=False):
-    if force is True:
-        log('DEBUG', message)
-    if get_value('developer', 'debug'):
+    if force is True or get_value('developer', 'debug'):
         log('DEBUG', message)
 
 def info(message, force=False):
-    if force is True:
-        log('INFO', message)
-    if get_value('developer', 'info'):
+    if force is True or get_value('developer', 'info'):
         log('INFO', message)
 
 def warn(message):
@@ -138,6 +135,26 @@ def warn(message):
 
 def error(message):
     log('ERROR', message)
+
+# python logging
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+root_logger = logging.getLogger()
+root_logger.addHandler(console_handler)
+
+def set_log_level(level):
+    if level == 'debug':
+        root_logger.setLevel(logging.DEBUG)
+    elif level == 'info':
+        root_logger.setLevel(logging.INFO)
+    elif level == 'warning':
+        root_logger.setLevel(logging.WARNING)
+    elif level == 'error':
+        root_logger.setLevel(logging.ERROR)
+    elif level == 'critical':
+        root_logger.setLevel(logging.CRITICAL)
+    else:
+        logging.warning('Invalid log level {}'.format(level))
 
 
 ####### NYX #######

@@ -310,7 +310,7 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
         string sysinfoFullpath = File::join(crashdir, "info.txt");
         string tcstepsFullpath = File::join(crashdir, "tcsteps.txt");
         // Generate sysinfo, screenshot
-        string command = string("webos_capture.py")
+        string command = string("webos_capture.py --log-level info")
                        + " --screenshot " + screenshotFullpath
                        + " --messages " + messagesFullpath
                        + " --sysinfo " + sysinfoFullpath

@@ -538,7 +538,7 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
 
 ErrCode BugreportHandler::createTicket(const string& summary, const string& description, const string& priority, const string& reproducibility, const string& uploadFiles, string& key)
 {
-    string command = "webos_issue.py --enable-popup --summary \'" + summary + "\' "
+    string command = "webos_issue.py --log-level info --enable-popup --summary \'" + summary + "\' "
                    + (description.empty() ? "" : "--description '" + description + "' ")
                    + (priority.empty() ? "" : "--priority " + priority + " ")
                    + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")

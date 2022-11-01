@@ -4,6 +4,7 @@ import argparse
 import os
 import json
 import subprocess
+import logging
 
 import webos_common as common
 
@@ -64,7 +65,7 @@ class WebOSCapture:
     def capture_journald(self, file=DEFAULT_JOURNALD):
         command = 'journalctl > {}'.format(file)
         subprocess.check_output(command, shell=True, encoding='utf-8')
-        print('Capture Journald : {}'.format(file))
+        logging.info('Capture Journald : {}'.format(file))
         return
 
     def capture_sysinfo(self, file=DEFAULT_INFO):
@@ -79,7 +80,7 @@ class WebOSCapture:
             result = Platform.instance().cat(f)
             WebOSCapture.instance().write(f, result)
         WebOSCapture.instance().close()
-        print('Capture sysinfo : {}'.format(file))
+        logging.info('Capture sysinfo : {}'.format(file))
         return
 
     def capture_coredump(self, in_file, out_file=DEFAULT_DUMP):
@@ -95,7 +96,6 @@ class WebOSCapture:
         l_index = output.find('[') + 1
         r_index = output.find(']')
         command = 'journalctl -t systemd-coredump _PID={} -o verbose > {}'.format(output[l_index:r_index], out_file)
-
         print('COMMAND: {}'.format(command))
         output = subprocess.check_output(command, shell=True, encoding='utf-8')
         return
@@ -103,12 +103,12 @@ class WebOSCapture:
     def capture_messages(self, file=DEFAULT_MESSAGES):
         message_files = ['var/log/' + x for x in os.listdir("/var/log") if x[:8] == 'messages']
         if len(message_files) == 0:
-            common.info('/var/log/messages does not exist')
+            logging.info('/var/log/messages does not exist')
             return
         command = 'tar zcf {} -C / {}'.format(file, ' '.join(message_files))
-        common.debug(command)
+        logging.info(command)
         subprocess.check_output(command, shell=True, encoding='utf-8')
-        print('Capture messages : {}'.format(file))
+        logging.info('Capture messages : {}'.format(file))
         return
 
     def capture_screenshot(self, file=DEFAULT_SCREENSHOT):
@@ -118,9 +118,9 @@ class WebOSCapture:
         else:
             args = '{{"path":"{}","method":"DISPLAY","width":1920,"height":1080,"format":"JPEG"}}'.format(file)
             command = "luna-send -n 1 luna://com.webos.service.capture/executeOneShot '{}'".format(args)
-        common.debug(command)
+        logging.info(command)
         subprocess.check_output(command, shell=True, encoding='utf-8')
-        print('Capture screenshot : {}'.format(file))
+        logging.info('Capture screenshot : {}'.format(file))
         return
 
     def capture_tcsteps(self, file=DEFAULT_TCSTEPS):
@@ -128,9 +128,9 @@ class WebOSCapture:
             command = "journalctl -q -t PmLogCtl -u dropbear | tail -n 500 > {}".format(file)
         else:
             command = "zgrep -h 'qa-tools\|automation-test' /var/log/messages* | tail -n 500 > {}".format(file)
-        common.debug(command)
+        logging.info(command)
         subprocess.check_output(command, shell=True, encoding='utf-8')
-        print('Capture tc steps info : {}'.format(file))
+        logging.info('Capture tc steps info : {}'.format(file))
         return
 
 
@@ -142,8 +142,11 @@ if __name__ == "__main__":
     parser.add_argument('--messages', type=str, help='capture /var/log/messages*')
     parser.add_argument('--screenshot', type=str, help='capture screenshot')
     parser.add_argument('--tcsteps',  type=str, help='capture tc steps info')
+    parser.add_argument('--log-level', type=str, help='Set log level [debug|info|warning|error]. The dafault value is warning.')
 
     args = parser.parse_args()
+    if args.log_level is not None:
+        common.set_log_level(args.log_level)
     if args.journald is not None:
         WebOSCapture.instance().capture_journald(args.journald)
     if args.sysinfo is not None:

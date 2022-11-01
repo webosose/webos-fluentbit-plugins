@@ -157,7 +157,7 @@ int JiraHandler::onInit(struct flb_output_instance *ins, struct flb_config *conf
         }
     }
 
-    string command = "webos_uploader.py --sync-config";
+    string command = "webos_uploader.py --sync-config --log-level debug";
     PLUGIN_INFO("%s", command.c_str());
     FILE *fp = popen(command.c_str(), "r");
     if (fp == NULL) {
@@ -305,7 +305,7 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
             escapedDesc.replace(escapedDesc.begin() + pos, escapedDesc.begin() + pos + pattern.size(), replace);
             offset = pos + replace.size();
         }
-        command = "webos_issue.py --summary \'" + summary + "\' "
+        command = "webos_issue.py --log-level info --summary \'" + summary + "\' "
                 + (username.empty() ? "" : "--id '" + username + "' ")
                 + (password.empty() ? "" : "--pw '" + password + "' ")
                 + (description.empty() ? "" : "--description \"" + escapedDesc + "\" ")
