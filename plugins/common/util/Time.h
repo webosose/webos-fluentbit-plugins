@@ -1,4 +1,4 @@
-// Copyright (c) 2020 LG Electronics, Inc.
+// Copyright (c) 2020-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@
 using namespace std;
 
 bool operator <(const timespec& lhs, const timespec& rhs);
+timespec operator -(const timespec& lhs, const timespec& rhs);
+timespec operator +(const timespec& lhs, const timespec& rhs);
 
 class Time {
 public:
