@@ -108,18 +108,18 @@ class WebOSIssue:
         for component in components:
             fields['components'].append({'name': component})
 
-        if unique_summary:
-            if summary is None:
-                logging.error("'summary' is required")
-                return None
-            issue = self.find_open_issue(summary)
-            if issue is not None:
-                logging.info("'{}' is already created - {}".format(summary, issue))
-                self.update_issue(issue, summary, description)
-                return None
-            if self.check_fixed_in(summary) is True:
-                logging.info("'{}' is already fixed".format(summary))
-                return None
+        #if unique_summary:
+        #    if summary is None:
+        #        logging.error("'summary' is required")
+        #        return None
+        #    issue = self.find_open_issue(summary)
+        #    if issue is not None:
+        #        logging.info("'{}' is already created - {}".format(summary, issue))
+        #        self.update_issue(issue, summary, description)
+        #        return None
+        #    if self.check_fixed_in(summary) is True:
+        #        logging.info("'{}' is already fixed".format(summary))
+        #        return None
         return self._jira.issue_create(fields)
 
     def guess_component(self, summary):
@@ -337,6 +337,8 @@ if __name__ == "__main__":
             pw = Crypto.instance().encrypt(pw)
             common.set_value('account', 'id', args.id)
             common.set_value('account', 'pw', pw)
+            if args.key is None and args.summary is None:
+                exit(0)
         except base64.binascii.Error as ex:
             logging.error(ex)
             exit(EXIT_STATUS_INVALID_REQUEST_PARAMS)
@@ -365,7 +367,26 @@ if __name__ == "__main__":
             args.description = ''
         args.description = '<p>Number of times this crash occurred : {}.</p>{}'.format(crashcounter, args.description)
 
-    if key is not None:
+    if args.description is None:
+        args.description = common.get_value('template', 'bug')
+
+    logging.debug('Description : "{}"'.format(args.description))
+
+    if args.key is None and args.unique_summary:
+        if args.summary is None:
+            logging.error("'summary' is required")
+            exit(1)
+        issue = WebOSIssue.instance().find_open_issue(args.summary)
+        if issue is not None:
+            logging.info("'{}' is already created - {}".format(args.summary, issue))
+            # UPDATE mode
+            args.key = issue
+        elif WebOSIssue.instance().check_fixed_in(args.summary) is True:
+            logging.info("'{}' is already fixed".format(args.summary))
+            exit(0)
+
+
+    if args.key is not None:
         # handle 'UPDATE' mode
         try:
             WebOSIssue.instance().update_issue(args.key, args.summary, args.description)
@@ -374,6 +395,11 @@ if __name__ == "__main__":
             if ex.response and ex.response.status_code == 401:
                 exit(EXIT_STATUS_LOGIN_FAILED)
             exit(1)
+        if args.comment is not None:
+            if args.attach_crashcounter:
+                args.comment = 'Number of times this crash occurred : {}.\n{}'.format(crashcounter, args.comment)
+            WebOSIssue.instance().add_comment(args.key, args.comment)
+            exit(0)
 
     elif args.summary is not None:
         # handle 'CREATE' mode
@@ -422,8 +448,8 @@ if __name__ == "__main__":
         keyfile = open(os.path.join(outdir, key), 'w')
         keyfile.close()
     else:
-        logging.info("'key' or 'summary' is needed")
-        exit(0)
+        logging.error("'key' or 'summary' is needed")
+        exit(EXIT_STATUS_INVALID_REQUEST_PARAMS)
 
     # handle 'attach-files'
     WebOSIssue.instance().attach_files(key, args.attach_files)

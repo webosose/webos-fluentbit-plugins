@@ -49,6 +49,7 @@
 #define KEY_MESSAGES            "messages"
 #define KEY_SCREENSHOT          "screenshot"
 #define KEY_SYSINFO             "sysinfo"
+#define KEY_TCSTEPS             "tcsteps"
 
 #define STR_LEN                 1024
 
@@ -213,6 +214,8 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
     string messages;
     string screenshot;
     string sysinfo;
+    string tcstepsFullpath;
+    string tcsteps;
     string command;
     string crashedFunc;
 
@@ -286,6 +289,10 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
         if (MSGPackUtil::getValue(payload, KEY_SYSINFO, sysinfo)) {
             PLUGIN_INFO("%s : %s", KEY_SYSINFO, sysinfo.c_str());
         }
+        if (MSGPackUtil::getValue(payload, KEY_TCSTEPS, tcstepsFullpath)) {
+            PLUGIN_INFO("%s : %s", KEY_TCSTEPS, tcstepsFullpath.c_str());
+            tcsteps = File::readFile(tcstepsFullpath);
+        }
 
         if (checkExeTime(exe) == -1) {
             PLUGIN_WARN("Not official exe file");
@@ -298,21 +305,27 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
 
         string pattern = "\"";
         string replace = "\\\"";
-        string escapedDesc = description;
         string::size_type pos = 0;
         string::size_type offset = 0;
-        while ((pos = escapedDesc.find(pattern, offset)) != string::npos) {
-            escapedDesc.replace(escapedDesc.begin() + pos, escapedDesc.begin() + pos + pattern.size(), replace);
+        string escapedComment = tcsteps;
+        while ((pos = escapedComment.find(pattern, offset)) != string::npos) {
+            escapedComment.replace(escapedComment.begin() + pos, escapedComment.begin() + pos + pattern.size(), replace);
             offset = pos + replace.size();
         }
+        if (tcsteps.empty())
+            escapedComment = "\nCouldn't find any automation test information from the logs.";
+        else
+            escapedComment = "\nThe following is the automation test information extracted from the logs.\nIt may be related to this crash.\n{code:sql}" + escapedComment + "{code}";
         command = "webos_issue.py --log-level info --summary \'" + summary + "\' "
                 + (username.empty() ? "" : "--id '" + username + "' ")
                 + (password.empty() ? "" : "--pw '" + password + "' ")
-                + (description.empty() ? "" : "--description \"" + escapedDesc + "\" ")
+                + (description.empty() ? "" : "--description \"" + description + "\" ")
                 + (priority.empty() ? "" : "--priority " + priority + " ")
                 + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
-                + (isCrashReport ? "--unique-summary --attach-crashcounter --without-sysinfo --without-screenshot --upload-files \'" + coredump + "\' \'" + crashreport + "\' " + journals + " " + messages + " " + screenshot + " " + sysinfo
-                                 : "--enable-popup " + (upload_files.empty() ? "" : "--upload-files " + upload_files));
+                + (isCrashReport ? "--unique-summary --attach-crashcounter --without-sysinfo --without-screenshot --upload-files \'" + coredump + "\' \'" + crashreport + "\' " + journals + " " + messages + " " + screenshot + " " + sysinfo + " "
+                                 : "--enable-popup " + (upload_files.empty() ? "" : "--upload-files " + upload_files + " "))
+                + "--comment \"" + escapedComment + "\" ";
+
         PLUGIN_INFO("command : %s", command.c_str());
 
         int ret = system(command.c_str());

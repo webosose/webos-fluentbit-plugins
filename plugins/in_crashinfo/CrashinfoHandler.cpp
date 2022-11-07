@@ -46,6 +46,7 @@
 #define KEY_SCREENSHOT          "screenshot"
 #define KEY_SYSINFO             "sysinfo"
 #define KEY_DESCRIPTION         "description"
+#define KEY_TCSTEPS             "tcsteps"
 
 #define STR_LEN                 1024
 
@@ -359,7 +360,6 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
             crashedFunc = "";
         }
         string summary = "[RDX_CRASH][" + m_distro + "] " + exe + " " + crashedFunc;
-        string tcsteps = File::readFile(tcstepsFullpath);
 
         msgpack_pack_array(&mp_pck, 2); // time | value
         flb_pack_time_now(&mp_pck);
@@ -372,7 +372,7 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
             childrenSize++;
         if (access(journalsFullpath.c_str(), F_OK) == 0)
             childrenSize++;
-        if (!tcsteps.empty())
+        if (access(tcstepsFullpath.c_str(), F_OK) == 0)
             childrenSize++;
         msgpack_pack_map(&mp_pck, childrenSize);
 
@@ -390,8 +390,8 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
             MSGPackUtil::putValue(&mp_pck, KEY_MESSAGES, messagesFullpath);
         MSGPackUtil::putValue(&mp_pck, KEY_SCREENSHOT, screenshotFullpath);
         MSGPackUtil::putValue(&mp_pck, KEY_SYSINFO, sysinfoFullpath);
-        if (!tcsteps.empty())
-            MSGPackUtil::putValue(&mp_pck, KEY_DESCRIPTION, "<p>The following is the automation test information extracted from the logs.<br>It may be related to this crash.</p>\r\n\r\n<pre class=\"je-fh20 jeCodeBlock\"><code class=\"language-bash\">" + tcsteps + "</code></pre>");
+        if (access(tcstepsFullpath.c_str(), F_OK) == 0)
+            MSGPackUtil::putValue(&mp_pck, KEY_TCSTEPS, tcstepsFullpath);
     }
 
     // flush to fluentbit

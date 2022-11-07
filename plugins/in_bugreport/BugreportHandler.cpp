@@ -500,9 +500,7 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
         PLUGIN_ERROR("summary is required");
         return sendResponse(request, ErrCode_INVALID_REQUEST_PARAMS);
     }
-    if (!JValueUtil::getValue(requestPayload, "description", description)) {
-        description = self->m_configManager.getDescription();
-    }
+    (void) JValueUtil::getValue(requestPayload, "description", description);
     (void) JValueUtil::getValue(requestPayload, "priority", priority);
     (void) JValueUtil::getValue(requestPayload, "reproducibility", reproducibility);
     if (JValueUtil::getValue(requestPayload, "screenshots", screenshots) && screenshots.isArray()) {
@@ -598,7 +596,7 @@ ErrCode BugreportHandler::processF12()
     m_screenshotManager.captureCompositorOutput();
     ErrCode errCode = ErrCode_NONE;
     string key;
-    if (ErrCode_NONE == (errCode = createTicket(m_configManager.getSummary(), m_configManager.getDescription(), "", "", m_screenshotManager.toString(), key))) {
+    if (ErrCode_NONE == (errCode = createTicket(m_configManager.getSummary(), "", "", "", m_screenshotManager.toString(), key))) {
         m_screenshotManager.removeScreenshots();
     }
     return errCode;
