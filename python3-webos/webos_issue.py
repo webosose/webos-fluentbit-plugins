@@ -181,6 +181,7 @@ class WebOSIssue:
     def find_open_issue(self, summary):
         summary = summary.replace("[","\\\\[")
         summary = summary.replace("]","\\\\]")
+        summary = summary.replace("\"","\\\"")
         JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug AND status not in (Closed, Verify)'.format(PROJECT_KEY, summary)
         logging.info(JQL)
         response = self._jira.jql(JQL, limit=1)
@@ -191,6 +192,7 @@ class WebOSIssue:
     def check_fixed_in(self, summary):
         summary = summary.replace("[","\\\\[")
         summary = summary.replace("]","\\\\]")
+        summary = summary.replace("\"","\\\"")
         JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug AND "Fixed In" is not Empty ORDER BY resolutiondate DESC'.format(PROJECT_KEY, summary)
         logging.info(JQL)
         response = self._jira.jql(JQL, limit=1)
