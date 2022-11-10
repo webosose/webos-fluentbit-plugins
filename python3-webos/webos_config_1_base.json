@@ -1,7 +1,7 @@
 {
     "jira": {
         "url" : "http://clm.lge.com/issue",
-        "projectKey": "WRO"
+        "projectKey": "WRP"
     },
     "account": {
         "id": "webosreporter",
