@@ -162,7 +162,9 @@ int InCrashinfoHandler::onInit(struct flb_input_instance *ins, struct flb_config
     ctx->pack_state.multiple = FLB_TRUE;
 
     // Set watch descriptor
-    ctx->wd = inotify_add_watch(ctx->fd, ctx->path, IN_CLOSE);
+    // Refer gpro.lge.com/c/339235
+    // According to the link above, the filename is passed only in IN_CREATE.
+    ctx->wd = inotify_add_watch(ctx->fd, ctx->path, IN_CREATE);
 
     // Collect upon data available on the watch event
     ret = flb_input_set_collector_event(ins, collectInCrashinfo, ctx->fd, config);
@@ -244,14 +246,16 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
             PLUGIN_ERROR("Too long event : %u (start : %d, len : %d)", event->len, ctx->buf_start, ctx->buf_len);
             break;
         }
-        if (!(event->mask & IN_CLOSE)) {
-            PLUGIN_ERROR("Not close event : %s", event->name);
+        if (!(event->mask & IN_CREATE)) {
+            PLUGIN_ERROR("Not create event : %s", event->name);
             continue;
         }
 
         string coredumpFilename = event->name;
         string coredumpFullpath = File::join(ctx->path, coredumpFilename);
         PLUGIN_INFO("New file is created : (%s)", coredumpFullpath.c_str());
+        // Guarantee coredump file closing time
+        sleep(1);
 
         if (verifyCoredumpFile(coredumpFilename.c_str()) == -1) {
             PLUGIN_ERROR("Not coredump file");
