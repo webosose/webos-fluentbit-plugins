@@ -162,7 +162,7 @@ int InCrashinfoHandler::onInit(struct flb_input_instance *ins, struct flb_config
     ctx->pack_state.multiple = FLB_TRUE;
 
     // Set watch descriptor
-    ctx->wd = inotify_add_watch(ctx->fd, ctx->path, IN_CLOSE_WRITE);
+    ctx->wd = inotify_add_watch(ctx->fd, ctx->path, IN_CLOSE);
 
     // Collect upon data available on the watch event
     ret = flb_input_set_collector_event(ins, collectInCrashinfo, ctx->fd, config);
@@ -244,8 +244,8 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
             PLUGIN_ERROR("Too long event : %u (start : %d, len : %d)", event->len, ctx->buf_start, ctx->buf_len);
             break;
         }
-        if (!(event->mask & IN_CLOSE_WRITE)) {
-            PLUGIN_ERROR("Not close event : %s [0x%08lx]", event->name, event->mask);
+        if (!(event->mask & IN_CLOSE)) {
+            PLUGIN_ERROR("Not close event : %s", event->name);
             continue;
         }
 
