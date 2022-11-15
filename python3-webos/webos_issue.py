@@ -7,6 +7,7 @@ import base64
 import shutil
 import requests
 import logging
+import subprocess
 
 import webos_common as common
 
@@ -120,22 +121,50 @@ class WebOSIssue:
         #    if self.check_fixed_in(summary) is True:
         #        logging.info("'{}' is already fixed".format(summary))
         #        return None
-        return self._jira.issue_create(fields)
+        try:
+            return self._jira.issue_create(fields)
+        except requests.exceptions.HTTPError as ex:
+            # {"errorMessages":[],"errors":{"components":"Component name 'luna-surfacemanager-base' is not valid"}}
+            logging.warning('{} {}'.format(ex.response.status_code, ex.response.text))
+            if ex.response.status_code == 400:
+                errmsg = ex.response.json().get('errors', {}).get('components')
+                errmsg_split = errmsg.split(' ')
+                if len(errmsg_split) != 6:
+                    pass
+                del errmsg_split[2]
+                if errmsg_split != ['Component', 'name', 'is', 'not', 'valid']:
+                    pass
+                for component in components:
+                    fields['labels'].append('Component-Not-Found:{}'.format(component))
+                fields['components'] = [{'name': COMPONENT_PM}]
+                logging.info("Retry with components {} and labels {}".format(COMPONENT_PM, fields['labels']))
+                return self._jira.issue_create(fields)
+            raise ex
 
     def guess_component(self, summary):
-        command = "unknown"
-        if summary.find('/usr/sbin') > 0:
-            command = summary[summary.find('/usr/sbin'):]
-        elif summary.find('/usr/bin') > 0:
-            command = summary[summary.find('/usr/bin'):]
-        if command.find(' ') > 0:
-            command = command[:command.find(' ')]
-        logging.info('command {}'.format(command))
-        relations = common.get_value('customfield', 'relations')
-        if command in relations:
-            return relations[command]
-        else:
-            return COMPONENT_PM
+        # for crash, [RDX_CRASH][webos] /usr/bin/coredump_example in _Z5funcCv (coredump_example + 0xeb4)
+        try:
+            exe = summary.split(' ', 2)
+            command = 'opkg search {}'.format(exe[1])
+            logging.info(command)
+            result = subprocess.check_output(command, shell=True, stderr=subprocess.DEVNULL, encoding='utf-8')
+            # opkg search /usr/bin/coredump_example
+            # webos-fluentbit-plugins - 1.0.0-37+gitr0+30b1c18982-r12
+            # lib32-webos-fluentbit-plugins - 1.0.0-37+gitr0+30b1c18982+gitr0+30b1c18982-r12
+            logging.info(result)
+            pkg = result.split(' ', 1)[0]
+            pkg = pkg[6:] if pkg.startswith('lib32-') else pkg
+            pkg2recipe = common.get_value('customfield', 'pkg2recipe')
+            # logging.debg('pkg2recipe', pkg2recipe)
+            if pkg in pkg2recipe:
+                return pkg2recipe[pkg]
+            else:
+                return pkg
+        except subprocess.CalledProcessError as ex:
+            logging.error('CalledProcessError: {}'.format(ex.returncode))
+        except Exception as ex:
+            logging.error('Exception: {}'.format(ex))
+        return COMPONENT_PM
 
     def update_issue(self, key, summary=None, description=None):
         if summary is None and description is None:
@@ -432,6 +461,7 @@ if __name__ == "__main__":
             components = args.components
         try:
             result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.unique_summary, components)
+            logging.info(result)
         except Exception as ex:
             error_text = ex.response.status_code if ex.response and ex.response.status_code else str(ex)
             logging.error('Failed to create ticket : {}'.format(error_text))
