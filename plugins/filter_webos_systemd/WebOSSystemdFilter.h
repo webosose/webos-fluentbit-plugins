@@ -48,10 +48,17 @@ private:
 
     WebOSSystemdFilter();
 
+    // To prevent too many calls in case of failure
+    inline bool isTimeSyncJustTried();
+    inline bool isTimeSyncDone();
+
+    void pushEvent(pair<flb_time, JValue> event);
+    void calcTimeCorrection();
     bool packCommonMsg(msgpack_unpacked* result, flb_time* timestamp, msgpack_packer* packer, size_t mapSize);
     void handlePowerOn(msgpack_unpacked* result, msgpack_packer* packer);
     void handleAppExecution(msgpack_unpacked* result, msgpack_packer* packer);
     void handleAppUsage(msgpack_unpacked* result, msgpack_packer* packer);
+    void handleTimeSync(msgpack_unpacked* result, msgpack_packer* packer);
     void handleErrorLog(msgpack_unpacked* result, msgpack_packer* packer, const string& priority);
 
     static const string PATH_RESPAWNED;
@@ -62,8 +69,29 @@ private:
     JValue m_deviceInfo;
     // For each module, register handlers : sam, bootd, pamlogin, ..
     map<string, SyslogIdentifierHandler> m_syslogIdentifier2handler;
+    // powerOn
     bool m_isPowerOnDone;
+    // appExecution
     map<string, struct flb_time> m_instanceId2timestamp;
+    // time sync and corection
+    // ex) m_monotimeBeforeSync = 20
+    //     m_realtimeBeforeSync = 2001-04-01
+    //       monotimeAfterSync  = 140
+    //       realtimeAfterSync  = 2022-11-02
+    //     m_realtimeDiff       =   21-07-01
+    //     m_minPrevRealtime    = 2022-11-02 - 20
+    //     m_maxPrevRealtime    = 2022-11-02 + (140 - 20)
+    // if a logged realtime < m_lastPrevRealtime
+    //     converted = a logged realtime + m_realtimeDiff - m_monotimeDiff
+    struct timespec m_monotimeBeforeSync;
+    struct timespec m_realtimeBeforeSync;
+    struct timespec m_realtimeDiff;
+    struct timespec m_monotimeDiff;
+    struct timespec m_minPrevRealtime;
+    struct timespec m_maxPrevRealtime;
+    list<pair<flb_time, JValue>> m_pendings;
+    time_t m_lscallLastTime;
+    bool m_isTimeSyncDone;
 };
 
 #endif

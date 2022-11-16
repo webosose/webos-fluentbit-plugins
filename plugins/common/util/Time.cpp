@@ -1,4 +1,4 @@
-// Copyright (c) 2020 LG Electronics, Inc.
+// Copyright (c) 2020-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,6 +29,32 @@ bool operator <(const timespec& lhs, const timespec& rhs)
         return lhs.tv_nsec < rhs.tv_nsec;
     else
         return lhs.tv_sec < rhs.tv_sec;
+}
+
+timespec operator -(const timespec& lhs, const timespec& rhs)
+{
+    timespec result;
+    if ((lhs.tv_nsec - rhs.tv_nsec) < 0) {
+        result.tv_sec = lhs.tv_sec - rhs.tv_sec - 1;
+        result.tv_nsec = lhs.tv_nsec - rhs.tv_nsec + 1000000000;
+    } else {
+        result.tv_sec = lhs.tv_sec - rhs.tv_sec;
+        result.tv_nsec = lhs.tv_nsec - rhs.tv_nsec;
+    }
+    return result;
+}
+
+timespec operator +(const timespec& lhs, const timespec& rhs)
+{
+    timespec result;
+    if ((lhs.tv_nsec + rhs.tv_nsec) >= 1000000000) {
+        result.tv_sec = lhs.tv_sec + rhs.tv_sec + 1;
+        result.tv_nsec = lhs.tv_nsec + rhs.tv_nsec - 1000000000;
+    } else {
+        result.tv_sec = lhs.tv_sec + rhs.tv_sec;
+        result.tv_nsec = lhs.tv_nsec + rhs.tv_nsec;
+    }
+    return result;
 }
 
 Time::Time()

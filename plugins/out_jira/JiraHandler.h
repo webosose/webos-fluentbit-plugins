@@ -55,7 +55,6 @@ private:
     void initDistroInfo();
     int initOpkgChecksum();
     int checkOpkgChecksum();
-    int parseCoredumpComm(const string& coredump, string& comm, string& pid, string& exe);
     bool getCrashedFunction(const string& crashreport, const string& comm, string& func);
     int checkExeTime(const string& exe);
     bool isExceptedExe(const string& exe);

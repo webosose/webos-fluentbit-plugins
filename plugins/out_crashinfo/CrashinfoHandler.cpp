@@ -24,7 +24,9 @@
 #include "util/MSGPackUtil.h"
 #include "util/Logger.h"
 
-#define KEY_COMM_PID                "comm.pid"
+#define KEY_COMM                    "comm"
+#define KEY_EXE                     "exe"
+#define KEY_PID                     "pid"
 #define KEY_COREDUMP                "coredump"
 #define KEY_CRASHREPORT             "crashreport"
 #define KEY_JOURNALS                "journals"
@@ -120,7 +122,9 @@ void OutCrashinfoHandler::onFlush(const void *data, size_t bytes, const char *ta
     struct flb_time timestamp;
     msgpack_object* payload;
 
-    string commPid;
+    string comm;
+    string exe;
+    string pid;
     string coredump;
     string crashreport;
     string journals;
@@ -137,8 +141,14 @@ void OutCrashinfoHandler::onFlush(const void *data, size_t bytes, const char *ta
             continue;
         }
 
-        if (MSGPackUtil::getValue(payload, KEY_COMM_PID, commPid)) {
-            PLUGIN_INFO("%s : %s", KEY_COMM_PID, commPid.c_str());
+        if (MSGPackUtil::getValue(payload, KEY_COMM, comm)) {
+            PLUGIN_INFO("%s : %s", KEY_COMM, comm.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_EXE, exe)) {
+            PLUGIN_INFO("%s : %s", KEY_EXE, exe.c_str());
+        }
+        if (MSGPackUtil::getValue(payload, KEY_PID, pid)) {
+            PLUGIN_INFO("%s : %s", KEY_PID, pid.c_str());
         }
         if (MSGPackUtil::getValue(payload, KEY_COREDUMP, coredump)) {
             PLUGIN_INFO("%s : %s", KEY_COREDUMP, coredump.c_str());
@@ -186,10 +196,10 @@ void OutCrashinfoHandler::onFlush(const void *data, size_t bytes, const char *ta
             }
         }
 
-        string command = string("tar zcf ") + File::join(m_workDir, commPid + ".tgz ") + "-C / "
+        string command = string("tar zcf ") + File::join(m_workDir, comm + "." + pid + ".tgz ") + "-C / "
                        // coredump is not generated in MP build.
                        + (access(coredump.c_str(), F_OK) == 0 ? coredump : "") + " "
-                       + crashreport + " " + journals + " " + messages + " " + screenshot + " " + sysinfo;
+                       + "'" + crashreport + "' " + journals + " " + messages + " " + screenshot + " " + sysinfo;
         PLUGIN_INFO("command : %s", command.c_str());
         int rc = system(command.c_str());
         if (rc == -1) {
