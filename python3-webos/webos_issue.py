@@ -72,7 +72,7 @@ class WebOSIssue:
                 password=pw)
         return
 
-    def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, unique_summary=False, components=None, labels=[]):
+    def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, issuetype=None, unique_summary=False, components=None, labels=[]):
         if components is None:
             components = [COMPONENT_PM]
         if summary is None and description is None:
@@ -90,7 +90,7 @@ class WebOSIssue:
             ],
             "labels": labels,
             "issuetype": {
-                "name": "Bug"
+                "name": "Bug" if issuetype is None else issuetype
             }
         }
         if summary is not None:
@@ -325,6 +325,7 @@ if __name__ == "__main__":
     parser.add_argument('--comment',                 type=str, help='Issue comment')
     parser.add_argument('--priority',                type=str, help='Issue priority [P1|P2|P3|P4|P5].')
     parser.add_argument('--reproducibility',         type=str, help='Issue reproducibility [always|often|seldom|rarely|unknown].')
+    parser.add_argument('--issuetype',               type=str, help='Issue type [Bug|CCC Bug].')
     # parser.add_argument('--components',              action='append', help='Issue components')
     parser.add_argument('--components',              type=str, nargs='*', help='Issue components')
     parser.add_argument('--labels',                  type=str, nargs='*', help='Issue labels to be appended')
@@ -503,7 +504,7 @@ if __name__ == "__main__":
         elif args.crashed_executable is not None:
             components = [WebOSIssue.instance().guess_component(args.crashed_executable)]
         try:
-            result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.unique_summary, components, labels)
+            result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.issuetype, args.unique_summary, components, labels)
             logging.info(result)
         except Exception as ex:
             error_text = ex.response.status_code if ex.response and ex.response.status_code else str(ex)

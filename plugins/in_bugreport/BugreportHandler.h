@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 LG Electronics, Inc.
+// Copyright (c) 2021-2023 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ private:
     static bool getConfig(LSHandle *sh, LSMessage *msg, void *ctx);
     static bool setConfig(LSHandle *sh, LSMessage *msg, void *ctx);
     static bool createBug(LSHandle *sh, LSMessage *msg, void *ctx);
-    static ErrCode createTicket(const string& summary, const string& description, const string& priority, const string& reproducibility, const string& uploadFiles, string& key);
+    static ErrCode createTicket(const string& summary, const string& description, const string& priority, const string& reproducibility, const string& issuetype, const string& uploadFiles, string& key);
 
     BugreportHandler();
 

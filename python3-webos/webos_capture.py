@@ -136,17 +136,37 @@ class WebOSCapture:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=os.path.basename(__file__))
-    parser.add_argument('--journald', type=str, help='capture journald')
-    parser.add_argument('--sysinfo',  type=str, help='capture sysinfo')
-    parser.add_argument('--coredump', type=str, nargs='*', help='capture coredump info')
-    parser.add_argument('--messages', type=str, help='capture /var/log/messages*')
-    parser.add_argument('--screenshot', type=str, help='capture screenshot')
-    parser.add_argument('--tcsteps',  type=str, help='capture tc steps info')
+    parser.add_argument('filename', type=str, nargs='?', help='Capture all logs and save as <filename>.tgz')
+    parser.add_argument('--journald', type=str, help='Capture journald')
+    parser.add_argument('--sysinfo',  type=str, help='Capture sysinfo')
+    parser.add_argument('--coredump', type=str, nargs='*', help='Capture coredump info')
+    parser.add_argument('--messages', type=str, help='Capture /var/log/messages*')
+    parser.add_argument('--screenshot', type=str, help='Capture screenshot')
+    parser.add_argument('--tcsteps',  type=str, help='Capture TC steps info')
     parser.add_argument('--log-level', type=str, help='Set log level [debug|info|warning|error]. The dafault value is warning.')
 
     args = parser.parse_args()
     if args.log_level is not None:
         common.set_log_level(args.log_level)
+
+    if args.filename is not None:
+        print('Capturing...')
+        WebOSCapture.instance().capture_sysinfo(DEFAULT_INFO)
+        WebOSCapture.instance().capture_screenshot(DEFAULT_SCREENSHOT)
+        command = 'tar zcvf {}.tgz -C / -h {} {} '.format(args.filename, DEFAULT_INFO[1:], DEFAULT_SCREENSHOT[1:])
+        if os.access("/var/spool/rdxd/previous_boot_logs.tar.gz", os.F_OK):
+            command += 'var/spool/rdxd/previous_boot_logs.tar.gz '
+        if os.access("/run/systemd/journal/socket", os.F_OK):
+            WebOSCapture.instance().capture_journald(DEFAULT_JOURNALD)
+            command += DEFAULT_JOURNALD[1:]
+        else:
+            WebOSCapture.instance().capture_messages(DEFAULT_MESSAGES)
+            command += DEFAULT_MESSAGES[1:]
+        logging.info(command)
+        subprocess.check_output(command, shell=True, encoding='utf-8')
+        print('Captured : {}.tgz'.format(args.filename))
+        exit(0)
+
     if args.journald is not None:
         WebOSCapture.instance().capture_journald(args.journald)
     if args.sysinfo is not None:
