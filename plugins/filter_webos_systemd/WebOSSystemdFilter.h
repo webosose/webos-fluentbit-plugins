@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 LG Electronics, Inc.
+// Copyright (c) 2021-2023 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -48,17 +48,14 @@ private:
 
     WebOSSystemdFilter();
 
-    // To prevent too many calls in case of failure
-    inline bool isTimeSyncJustTried();
     inline bool isTimeSyncDone();
 
     void pushEvent(pair<flb_time, JValue> event);
-    void calcTimeCorrection();
+    void processPendings(msgpack_unpacked* result, msgpack_packer* packer);
     bool packCommonMsg(msgpack_unpacked* result, flb_time* timestamp, msgpack_packer* packer, size_t mapSize);
     void handlePowerOn(msgpack_unpacked* result, msgpack_packer* packer);
     void handleAppExecution(msgpack_unpacked* result, msgpack_packer* packer);
     void handleAppUsage(msgpack_unpacked* result, msgpack_packer* packer);
-    void handleTimeSync(msgpack_unpacked* result, msgpack_packer* packer);
     void handleErrorLog(msgpack_unpacked* result, msgpack_packer* packer, const string& priority);
 
     static const string PATH_RESPAWNED;
@@ -90,7 +87,6 @@ private:
     struct timespec m_minPrevRealtime;
     struct timespec m_maxPrevRealtime;
     list<pair<flb_time, JValue>> m_pendings;
-    time_t m_lscallLastTime;
     bool m_isTimeSyncDone;
 };
 

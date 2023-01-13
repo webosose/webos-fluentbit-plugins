@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 LG Electronics, Inc.
+// Copyright (c) 2021-2023 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -492,7 +492,7 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
     }
 
     BugreportHandler* self = (BugreportHandler*)ctx;
-    string summary, description, priority, reproducibility;
+    string summary, description, priority, reproducibility, issuetype;
     JValue screenshots = Array();
     string screenshotStr;
     list<string> screenshotPaths;
@@ -503,6 +503,7 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
     (void) JValueUtil::getValue(requestPayload, "description", description);
     (void) JValueUtil::getValue(requestPayload, "priority", priority);
     (void) JValueUtil::getValue(requestPayload, "reproducibility", reproducibility);
+    (void) JValueUtil::getValue(requestPayload, "issuetype", issuetype);
     if (JValueUtil::getValue(requestPayload, "screenshots", screenshots) && screenshots.isArray()) {
         for (const JValue& screenshot : screenshots.items()) {
             if (!screenshot.isString())
@@ -518,7 +519,7 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
     // TODO We need to pass data to output plugin. There are no output plugins at this time.
 
     string key;
-    if (ErrCode_NONE != (errCode = createTicket(summary, description, priority, reproducibility, screenshotStr, key))) {
+    if (ErrCode_NONE != (errCode = createTicket(summary, description, priority, reproducibility, issuetype, screenshotStr, key))) {
         return sendResponse(request, errCode);
     }
     for (const string& screenshotPath : screenshotPaths) {
@@ -534,12 +535,13 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
     return sendResponse(request, responsePayload.stringify());
 }
 
-ErrCode BugreportHandler::createTicket(const string& summary, const string& description, const string& priority, const string& reproducibility, const string& uploadFiles, string& key)
+ErrCode BugreportHandler::createTicket(const string& summary, const string& description, const string& priority, const string& reproducibility, const string& issuetype, const string& uploadFiles, string& key)
 {
     string command = "webos_issue.py --log-level info --enable-popup --summary \'" + summary + "\' "
                    + (description.empty() ? "" : "--description '" + description + "' ")
                    + (priority.empty() ? "" : "--priority " + priority + " ")
                    + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
+                   + (issuetype.empty() ? "" : "--issuetype \"" + issuetype + "\" ")
                    + (uploadFiles.empty() ? "" : "--upload-files " + uploadFiles);
     PLUGIN_INFO("%s", command.c_str());
     FILE *fp = popen(command.c_str(), "r");
@@ -596,7 +598,7 @@ ErrCode BugreportHandler::processF12()
     m_screenshotManager.captureCompositorOutput();
     ErrCode errCode = ErrCode_NONE;
     string key;
-    if (ErrCode_NONE == (errCode = createTicket(m_configManager.getSummary(), "", "", "", m_screenshotManager.toString(), key))) {
+    if (ErrCode_NONE == (errCode = createTicket(m_configManager.getSummary(), "", "", "", "", m_screenshotManager.toString(), key))) {
         m_screenshotManager.removeScreenshots();
     }
     return errCode;

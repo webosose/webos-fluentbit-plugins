@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 LG Electronics, Inc.
+// Copyright (c) 2021-2023 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -322,7 +322,7 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
                 + (description.empty() ? "" : "--description \"" + description + "\" ")
                 + (priority.empty() ? "" : "--priority " + priority + " ")
                 + (reproducibility.empty() ? "" : "--reproducibility \"" + reproducibility + "\" ")
-                + (isCrashReport ? "--unique-summary --attach-crashcounter --without-sysinfo --without-screenshot --upload-files \'" + coredump + "\' \'" + crashreport + "\' " + journals + " " + messages + " " + screenshot + " " + sysinfo + " "
+                + (isCrashReport ? "--unique-summary --attach-crashcounter --without-sysinfo --without-screenshot --labels CRASH_BUG --crashed-executable \'" + exe + "\' --upload-files \'" + coredump + "\' \'" + crashreport + "\' " + journals + " " + messages + " " + screenshot + " " + sysinfo + " "
                                  : "--enable-popup " + (upload_files.empty() ? "" : "--upload-files " + upload_files + " "))
                 + "--comment \"" + escapedComment + "\" ";
 

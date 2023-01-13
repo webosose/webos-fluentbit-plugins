@@ -1,6 +1,6 @@
 # @@@LICENSE
 #
-#      Copyright (c) 2021-2022 LG Electronics, Inc.
+#      Copyright (c) 2021-2023 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ add_subdirectory(plugins)
 add_subdirectory(src/coredump_example)
 add_subdirectory(python3-webos)
 add_subdirectory(input_simulator)
-add_subdirectory(inotify_coredump_test)
+# add_subdirectory(inotify_coredump_test)
 
 # install
 file(GLOB fluent-bit_conf files/conf/*.conf)

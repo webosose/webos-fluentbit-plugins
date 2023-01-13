@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 LG Electronics, Inc.
+// Copyright (c) 2021-2023 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -56,7 +56,6 @@ WebOSSystemdFilter::WebOSSystemdFilter()
     , m_monotimeDiff({0, 0})
     , m_minPrevRealtime({0, 0})
     , m_maxPrevRealtime({0, 0})
-    , m_lscallLastTime(0)
     , m_isTimeSyncDone(false)
 {
     setClassName("WebOSSystemdFilter");
@@ -124,12 +123,10 @@ int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_
     if (-1 == clock_gettime(CLOCK_REALTIME, &m_realtimeBeforeSync))
         PLUGIN_ERROR("Failed to clock_gettime (REALTIME) : %s", strerror(errno));
     PLUGIN_INFO("RealtimeBeforeSync : %10lld.%09ld", m_realtimeBeforeSync.tv_sec, m_realtimeBeforeSync.tv_nsec);
-    calcTimeCorrection();
 
     m_syslogIdentifier2handler["LunaSysService"] = std::bind(&WebOSSystemdFilter::handlePowerOn, this, std::placeholders::_1, std::placeholders::_2);
     m_syslogIdentifier2handler["sam"] = std::bind(&WebOSSystemdFilter::handleAppExecution, this, std::placeholders::_1, std::placeholders::_2);
     m_syslogIdentifier2handler["WebAppMgr"] = std::bind(&WebOSSystemdFilter::handleAppUsage, this, std::placeholders::_1, std::placeholders::_2);
-    m_syslogIdentifier2handler["fluent-bit.sh"] = std::bind(&WebOSSystemdFilter::handleTimeSync, this, std::placeholders::_1, std::placeholders::_2);
     return 0;
 }
 
@@ -142,9 +139,6 @@ int WebOSSystemdFilter::onExit(void *context, struct flb_config *config)
 
 int WebOSSystemdFilter::onFilter(const void *data, size_t bytes, const char *tag, int tag_len, void **out_buf, size_t *out_size, struct flb_filter_instance *instance, void *context, struct flb_config *config)
 {
-    if (!isTimeSyncDone() && !isTimeSyncJustTried())
-        calcTimeCorrection();
-
     struct flb_time tm;
     msgpack_object* mapObj;
     size_t off = 0;
@@ -205,7 +199,67 @@ int WebOSSystemdFilter::onFilter(const void *data, size_t bytes, const char *tag
         handler(&result, &packer);
     }
 
-    if (m_pendings.size() > 0 && isTimeSyncDone()) {
+    msgpack_unpacked_destroy(&result);
+
+    /* link new buffers */
+    *out_buf = sbuffer.data;
+    *out_size = sbuffer.size;
+    return FLB_FILTER_MODIFIED;
+}
+
+bool WebOSSystemdFilter::isTimeSyncDone()
+{
+    return m_isTimeSyncDone;
+}
+
+void WebOSSystemdFilter::pushEvent(pair<flb_time, JValue> event)
+{
+    while (m_pendings.size() >= QUEUE_MAX_ENTRIES)
+        m_pendings.pop_front();
+    m_pendings.emplace_back(event);
+}
+
+void WebOSSystemdFilter::processPendings(msgpack_unpacked* result, msgpack_packer* packer)
+{
+    struct timespec realtimeAfterSync;
+    struct timespec monotimeAfterSync;
+    struct timespec realtimeDiff;
+    struct timespec monotimeDiff;
+
+    if (-1 == clock_gettime(CLOCK_REALTIME, &realtimeAfterSync)) {
+        PLUGIN_ERROR("Failed to clock_gettime (REALTIME) : %s", strerror(errno));
+        return;
+    }
+    if (-1 == clock_gettime(CLOCK_MONOTONIC, &monotimeAfterSync)) {
+        PLUGIN_ERROR("Failed to clock_gettime (MONOTIME) : %s", strerror(errno));
+        return;
+    }
+    PLUGIN_INFO("MonotimeBeforeSync : %10lld.%09ld", m_monotimeBeforeSync.tv_sec, m_monotimeBeforeSync.tv_nsec);
+    PLUGIN_INFO("RealtimeBeforeSync : %10lld.%09ld", m_realtimeBeforeSync.tv_sec, m_realtimeBeforeSync.tv_nsec);
+    PLUGIN_INFO("RealtimeAfterSync  : %10lld.%09ld", realtimeAfterSync.tv_sec, realtimeAfterSync.tv_nsec);
+    PLUGIN_INFO("MonotimeAfterSync  : %10lld.%09ld", monotimeAfterSync.tv_sec, monotimeAfterSync.tv_nsec);
+    m_realtimeDiff = realtimeAfterSync - m_realtimeBeforeSync;
+    m_monotimeDiff = monotimeAfterSync - m_monotimeBeforeSync;
+    PLUGIN_INFO("RealtimeDiff       : %10lld.%09ld", m_realtimeDiff.tv_sec, m_realtimeDiff.tv_nsec);
+    PLUGIN_INFO("MonotimeDiff       : %10lld.%09ld", m_monotimeDiff.tv_sec, m_monotimeDiff.tv_nsec);
+    // The range of Timestamp before NTP sync.
+    m_minPrevRealtime = m_realtimeBeforeSync - m_monotimeBeforeSync;
+    m_maxPrevRealtime = m_realtimeBeforeSync + m_monotimeDiff;
+    PLUGIN_INFO("MinPrevRealtime    : %10lld.%09ld", m_minPrevRealtime.tv_sec, m_minPrevRealtime.tv_nsec);
+    PLUGIN_INFO("MaxPrevRealtime    : %10lld.%09ld", m_maxPrevRealtime.tv_sec, m_maxPrevRealtime.tv_nsec);
+    PLUGIN_INFO("TimeDiffCalculated.");
+
+    if (m_instanceId2timestamp.size() > 0) {
+        for (auto& it : m_instanceId2timestamp) {
+            PLUGIN_INFO("Foreground (%10ld.%03d) %s Checking timestamp..", it.second.tm.tv_sec, it.second.tm.tv_nsec/(1000*1000), it.first.c_str());
+            if (m_minPrevRealtime < it.second.tm && it.second.tm < m_maxPrevRealtime) {
+                it.second.tm = it.second.tm + m_realtimeDiff - m_monotimeDiff;
+                PLUGIN_INFO("Foreground (%10ld.%03d) %s Updated!", it.second.tm.tv_sec, it.second.tm.tv_nsec/(1000*1000), it.first.c_str());
+            }
+        }
+    }
+
+    if (m_pendings.size() > 0) {
         PLUGIN_INFO("Process pendings..");
         flb_time ts;
         for (int idx = 0; !m_pendings.empty(); idx++) {
@@ -217,12 +271,12 @@ int WebOSSystemdFilter::onFilter(const void *data, size_t bytes, const char *tag
                 ts.tm = item.first.tm;
                 PLUGIN_INFO("(%03d) [%s] %10lld.%03ld", idx, Time::toISO8601(&ts.tm).c_str(), ts.tm.tv_sec, ts.tm.tv_nsec/(1000*1000));
             }
-            (void)packCommonMsg(&result, &ts, &packer, 2 + item.second.objectSize());
+            (void)packCommonMsg(result, &ts, packer, 2 + item.second.objectSize());
             for (JValue::KeyValue kv : item.second.children()) {
                 if (kv.second.isString()) {
                     const string& k = kv.first.asString();
                     const string& v = kv.second.asString();
-                    MSGPackUtil::putValue(&packer, k, v);
+                    MSGPackUtil::putValue(packer, k, v);
                     PLUGIN_INFO("  %s: %s", k.c_str(), v.c_str());
                     continue;
                 }
@@ -251,109 +305,13 @@ int WebOSSystemdFilter::onFilter(const void *data, size_t bytes, const char *tag
                     kv.second.remove("_beginMs");
                 }
                 // object extra : common logic including appExecution case
-                MSGPackUtil::putValue(&packer, "extra", kv.second);
+                MSGPackUtil::putValue(packer, "extra", kv.second);
                 PLUGIN_INFO("  extra: %s", kv.second.stringify().c_str());
             }
             m_pendings.pop_front();
         }
     }
-
-    msgpack_unpacked_destroy(&result);
-
-    /* link new buffers */
-    *out_buf = sbuffer.data;
-    *out_size = sbuffer.size;
-    return FLB_FILTER_MODIFIED;
-}
-
-bool WebOSSystemdFilter::isTimeSyncDone()
-{
-    return m_isTimeSyncDone;
-}
-
-bool WebOSSystemdFilter::isTimeSyncJustTried()
-{
-    struct timespec ts;
-    return (0 == clock_gettime(CLOCK_MONOTONIC, &ts)) &&
-            (ts.tv_sec - m_lscallLastTime) < 3600;
-}
-
-void WebOSSystemdFilter::pushEvent(pair<flb_time, JValue> event)
-{
-    while (m_pendings.size() >= QUEUE_MAX_ENTRIES)
-        m_pendings.pop_front();
-    m_pendings.emplace_back(event);
-}
-
-void WebOSSystemdFilter::calcTimeCorrection()
-{
-    struct timespec realtimeAfterSync;
-    struct timespec monotimeAfterSync;
-    gchar *output = NULL;
-    GError *error = NULL;
-    JValue jsonObj;
-    time_t epoch;
-    string command = "luna-send -w 1000 -n 1 luna://com.webos.service.systemservice/time/getNTPTime '{}'";
-    struct timespec realtimeDiff;
-    struct timespec monotimeDiff;
-
-    struct timespec monotonic = {0, 0};
-    if (-1 == clock_gettime(CLOCK_MONOTONIC, &monotonic)) {
-        PLUGIN_ERROR("Failed to clock_gettime (MONOTIME) : %s", strerror(errno));
-        goto Error;
-    }
-    // Get NTP time
-    PLUGIN_INFO("%s", command.c_str());
-    if (!g_spawn_command_line_sync(command.c_str(), &output, NULL, NULL, &error)) {
-        PLUGIN_ERROR("luna-send error: %s", error->message);
-        goto Error;
-    }
-    if (strlen(output) == 0) {
-        goto Error;
-    }
-    PLUGIN_INFO("%s", output);
-    jsonObj = JDomParser::fromString(output);
-    if (jsonObj.isNull()) {
-        PLUGIN_WARN("Json parse error");
-        goto Error;
-    }
-    if (!jsonObj["returnValue"].asBool()) {
-        PLUGIN_WARN("errorText : %s", jsonObj["errorText"].asString().c_str());
-        goto Error;
-    }
-    epoch = jsonObj["utc"].asNumber<time_t>();
-    PLUGIN_INFO("Epochtime          : %10lld.", epoch);
-    if (-1 == clock_gettime(CLOCK_REALTIME, &realtimeAfterSync)) {
-        PLUGIN_ERROR("Failed to clock_gettime (REALTIME) : %s", strerror(errno));
-        goto Error;
-    }
-    if (-1 == clock_gettime(CLOCK_MONOTONIC, &monotimeAfterSync)) {
-        PLUGIN_ERROR("Failed to clock_gettime (MONOTIME) : %s", strerror(errno));
-        goto Error;
-    }
-    PLUGIN_INFO("MonotimeBeforeSync : %10lld.%09ld", m_monotimeBeforeSync.tv_sec, m_monotimeBeforeSync.tv_nsec);
-    PLUGIN_INFO("RealtimeBeforeSync : %10lld.%09ld", m_realtimeBeforeSync.tv_sec, m_realtimeBeforeSync.tv_nsec);
-    PLUGIN_INFO("RealtimeAfterSync  : %10lld.%09ld", realtimeAfterSync.tv_sec, realtimeAfterSync.tv_nsec);
-    PLUGIN_INFO("MonotimeAfterSync  : %10lld.%09ld", monotimeAfterSync.tv_sec, monotimeAfterSync.tv_nsec);
-    m_realtimeDiff = realtimeAfterSync - m_realtimeBeforeSync;
-    m_monotimeDiff = monotimeAfterSync - m_monotimeBeforeSync;
-    PLUGIN_INFO("RealtimeDiff       : %10lld.%09ld", m_realtimeDiff.tv_sec, m_realtimeDiff.tv_nsec);
-    PLUGIN_INFO("MonotimeDiff       : %10lld.%09ld", m_monotimeDiff.tv_sec, m_monotimeDiff.tv_nsec);
-    //m_realtimeDiff = realtimeDiff;
-    // The range of Timestamp before NTP sync.
-    m_minPrevRealtime = m_realtimeBeforeSync - m_monotimeBeforeSync;
-    m_maxPrevRealtime = m_realtimeBeforeSync + m_monotimeDiff;
-    PLUGIN_INFO("MinPrevRealtime    : %10lld.%09ld", m_minPrevRealtime.tv_sec, m_minPrevRealtime.tv_nsec);
-    PLUGIN_INFO("MaxPrevRealtime    : %10lld.%09ld", m_maxPrevRealtime.tv_sec, m_maxPrevRealtime.tv_nsec);
-    PLUGIN_INFO("TimeDiffCalculated.");
-
-Error:
-    if (output)
-        g_free(output);
-    if (error)
-        g_error_free(error);
-
-    m_lscallLastTime = monotonic.tv_sec;
+    m_isTimeSyncDone = true;
 }
 
 bool WebOSSystemdFilter::packCommonMsg(msgpack_unpacked* result, flb_time* timestamp, msgpack_packer* packer, size_t mapSize)
@@ -397,8 +355,7 @@ void WebOSSystemdFilter::handlePowerOn(msgpack_unpacked* result, msgpack_packer*
         PLUGIN_INFO("Q(%02u) = [%10lld.%03ld] %s", m_pendings.size(), timestamp.tm.tv_sec, timestamp.tm.tv_nsec/(1000*1000), object.stringify().c_str());
         pushEvent(make_pair(timestamp, object));
         m_isPowerOnDone = true;
-        // It is most likely that the time is synced.
-        calcTimeCorrection();
+        processPendings(result, packer);
         return;
     }
 
@@ -533,35 +490,6 @@ void WebOSSystemdFilter::handleAppUsage(msgpack_unpacked* result, msgpack_packer
     MSGPackUtil::putValue(packer, "sub", sub);
     MSGPackUtil::putValue(packer, "extra", extra);
     PLUGIN_INFO("Event (%s), Main (%s), Sub (%s), Extra %s", event.c_str(), main.c_str(), sub.c_str(), extra.stringify().c_str());
-}
-
-void WebOSSystemdFilter::handleTimeSync(msgpack_unpacked* result, msgpack_packer* packer)
-{
-    if (m_isTimeSyncDone)
-        return;
-
-    string message;
-    if (!MSGPackUtil::getValue(&result->data.via.array.ptr[1], "MESSAGE", message))
-        return;
-    // [2022/11/10 00:50:34] [ info] [webos_systemd][calcTimeCorrection] Epochtime          : 1668070234.
-    // [2022/11/10 00:50:34] [ info] [webos_systemd][calcTimeCorrection] TimeDiffCalculated.
-    // [2022/11/10 00:50:34] [ info] [webos_systemd][calcTimeCorrection] TimeSynced.
-    // PLUGIN_DEBUG("MESSAGE: %s", message.c_str());
-    if (message.find("TimeDiffCalculated.") == string::npos)
-        return;
-
-    if (m_instanceId2timestamp.size() > 0) {
-        for (auto& it : m_instanceId2timestamp) {
-            PLUGIN_INFO("Foreground (%10ld.%03d) %s Checking timestamp..", it.second.tm.tv_sec, it.second.tm.tv_nsec/(1000*1000), it.first.c_str());
-            if (m_minPrevRealtime < it.second.tm && it.second.tm < m_maxPrevRealtime) {
-                it.second.tm = it.second.tm + m_realtimeDiff - m_monotimeDiff;
-                PLUGIN_INFO("Foreground (%10ld.%03d) %s Updated!", it.second.tm.tv_sec, it.second.tm.tv_nsec/(1000*1000), it.first.c_str());
-            }
-        }
-    }
-
-    m_isTimeSyncDone = true;
-    PLUGIN_INFO("TimeSyncDone.");
 }
 
 void WebOSSystemdFilter::handleErrorLog(msgpack_unpacked* result, msgpack_packer* packer, const string& priority)

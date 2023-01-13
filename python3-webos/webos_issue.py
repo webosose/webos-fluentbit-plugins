@@ -72,7 +72,9 @@ class WebOSIssue:
                 password=pw)
         return
 
-    def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, unique_summary=False, components=[COMPONENT_PM]):
+    def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, issuetype=None, unique_summary=False, components=None, labels=[]):
+        if components is None:
+            components = [COMPONENT_PM]
         if summary is None and description is None:
             return None
 
@@ -86,11 +88,9 @@ class WebOSIssue:
                     "value": NYX.instance().get_found_on(),
                 }
             ],
-            "labels": [
-                "Link-RDX-Server"
-            ],
+            "labels": labels,
             "issuetype": {
-                "name": "Bug"
+                "name": "Bug" if issuetype is None else issuetype
             }
         }
         if summary is not None:
@@ -141,11 +141,11 @@ class WebOSIssue:
                 return self._jira.issue_create(fields)
             raise ex
 
-    def guess_component(self, summary):
+    def guess_component(self, exe):
         # for crash, [RDX_CRASH][webos] /usr/bin/coredump_example in _Z5funcCv (coredump_example + 0xeb4)
         try:
-            exe = summary.split(' ', 2)
-            command = 'opkg search {}'.format(exe[1])
+            # exe = summary.split(' ', 2)
+            command = 'opkg search {}'.format(exe)
             logging.info(command)
             result = subprocess.check_output(command, shell=True, stderr=subprocess.DEVNULL, encoding='utf-8')
             # opkg search /usr/bin/coredump_example
@@ -166,7 +166,7 @@ class WebOSIssue:
             logging.error('Exception: {}'.format(ex))
         return COMPONENT_PM
 
-    def update_issue(self, key, summary=None, description=None):
+    def update_issue(self, key, summary=None, description=None, labels=[]):
         if summary is None and description is None:
             return True
 
@@ -175,8 +175,13 @@ class WebOSIssue:
             fields['summary'] = summary
         if description is not None:
             fields['description'] = description
+        if len(labels) > 0:
+            fields['labels'] = labels
 
         return self._jira.update_issue_field(key, fields)
+
+    def find_issue(self, key):
+        return self._jira.issue(key)
 
     def find_open_issue(self, summary):
         summary = summary.replace("[","\\\\[")
@@ -186,7 +191,8 @@ class WebOSIssue:
         logging.info(JQL)
         response = self._jira.jql(JQL, limit=1)
         if len(response['issues']) > 0:
-            return response['issues'][0]['key']
+            # return response['issues'][0]['key']
+            return response['issues'][0]
         return None
 
     def check_fixed_in(self, summary):
@@ -294,6 +300,19 @@ class WebOSIssue:
             self._jira.set_issue_status(key, 'Verify')
         self._jira.set_issue_status(key, 'Closed', fields={'resolution':{'name':'False Positive'}})
 
+    def create_issue_link(self, name, inward, outward):
+        data = {
+            'type': {'name': name},
+            'inwardIssue': {'key': inward},
+            'outwardIssue': {'key': outward}
+        }
+        try:
+            self._jira.create_issue_link(data)
+            return True
+        except Exception as ex:
+            logging.error(ex)
+            return False
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=os.path.basename(__file__))
@@ -306,8 +325,10 @@ if __name__ == "__main__":
     parser.add_argument('--comment',                 type=str, help='Issue comment')
     parser.add_argument('--priority',                type=str, help='Issue priority [P1|P2|P3|P4|P5].')
     parser.add_argument('--reproducibility',         type=str, help='Issue reproducibility [always|often|seldom|rarely|unknown].')
+    parser.add_argument('--issuetype',               type=str, help='Issue type [Bug|CCC Bug].')
     # parser.add_argument('--components',              action='append', help='Issue components')
-    parser.add_argument('--components',              type=str, nargs='*',  help='Issue components')
+    parser.add_argument('--components',              type=str, nargs='*', help='Issue components')
+    parser.add_argument('--labels',                  type=str, nargs='*', help='Issue labels to be appended')
 
     parser.add_argument('--attach-files',            type=str, nargs='*', help='All files are attached into jira ticket')
     parser.add_argument('--upload-files',            type=str, nargs='*', help='All files are uploaded into file server (The file on the server is deleted after the ticket is closed and a period of time has elapsed)')
@@ -316,14 +337,18 @@ if __name__ == "__main__":
     parser.add_argument('--without-screenshot',      action='store_true', help='Disable taking screenshot')
     parser.add_argument('--close',                   action='store_true', help='Close issue with --key')
 
+    parser.add_argument('--link-has-test-case',      type=str, help="Create link with 'has test case'")
+    parser.add_argument('--link-is-a-test-case-for', type=str, help="Create link with 'is a test case for'")
+    parser.add_argument('--link-relates-to',         type=str, help="Create link with 'relates to'")
+
     parser.add_argument('--unique-summary',          action='store_true', help='Create issue only if it is unique summary')
     parser.add_argument('--attach-crashcounter',     action='store_true', help='Attach crashcounter in description')
+    parser.add_argument('--crashed-executable',      type=str, help='Crashed executable of the form /usr/bin/coredump_example. This is used to determine the component when the --components is not specified.')
     parser.add_argument('--show-id',                 action='store_true', help='Show ID and PASS')
     parser.add_argument('--show-component',          action='store_true', help='Show all components')
     parser.add_argument('--show-devicename',         action='store_true', help='Show all supported devices')
     parser.add_argument('--get-project-components',  action='store_true', help='Show all components registered in project')
     parser.add_argument('--enable-popup',            action='store_true', help='Display the result in a pop-up')
-    parser.add_argument('--verbose',                 action='store_true', help='Verbose output')
     parser.add_argument('--log-level',               type=str, help='Set log level [debug|info|warning|error]. The dafault value is warning.')
     parser.add_argument('--is-close',                action='store_true', help='(Deprecated) Close issue with --key')
 
@@ -403,24 +428,41 @@ if __name__ == "__main__":
 
     logging.debug('Description : "{}"'.format(args.description))
 
+    issue = None
     if args.key is None and args.unique_summary:
         if args.summary is None:
             logging.error("'summary' is required")
             exit(1)
         issue = WebOSIssue.instance().find_open_issue(args.summary)
         if issue is not None:
-            logging.info("'{}' is already created - {}".format(args.summary, issue))
+            logging.info("'{}' is already created - {}".format(args.summary, issue['key']))
             # UPDATE mode
-            args.key = issue
+            args.key = issue['key']
         elif WebOSIssue.instance().check_fixed_in(args.summary) is True:
             logging.info("'{}' is already fixed".format(args.summary))
             exit(0)
 
 
+    labels = []
+    if len(upload_files) > 0 or args.without_sysinfo is False or args.without_screenshot is False:
+        # This means that some files are uploaded to rdx server.
+        # The files are deleted after the issue is closed and a certain period time has elapsed.
+        labels = ['Link-RDX-Server']
+    if args.labels is not None and len(args.labels) > 0:
+        labels.extend(args.labels)
+    logging.debug("Labels: {}".format(labels))
+
     if args.key is not None:
         # handle 'UPDATE' mode
         try:
-            WebOSIssue.instance().update_issue(args.key, args.summary, args.description)
+            if args.labels is not None and len(args.labels) > 0 and issue is None:
+                issue = WebOSIssue.instance().find_issue(args.key)
+            if len(issue['fields'].get('labels')) > 0:
+                labels.extend(issue['fields']['labels'])
+                # remove duplicates
+                labels = list(dict.fromkeys(labels))
+                logging.debug("Labels: {}".format(labels))
+            WebOSIssue.instance().update_issue(args.key, args.summary, args.description, labels)
         except Exception as ex:
             logging.error("{} : Failed to update '{}'".format(ex, args.key))
             if ex.response and ex.response.status_code == 401:
@@ -456,13 +498,13 @@ if __name__ == "__main__":
             WebOSCapture.instance().capture_screenshot(screenshot_path)
             upload_files.append(screenshot_path)
 
-        components = []
-        if args.components is None:
-            components = [WebOSIssue.instance().guess_component(args.summary)]
-        else:
+        components = None
+        if args.components is not None:
             components = args.components
+        elif args.crashed_executable is not None:
+            components = [WebOSIssue.instance().guess_component(args.crashed_executable)]
         try:
-            result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.unique_summary, components)
+            result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.issuetype, args.unique_summary, components, labels)
             logging.info(result)
         except Exception as ex:
             error_text = ex.response.status_code if ex.response and ex.response.status_code else str(ex)
@@ -491,6 +533,13 @@ if __name__ == "__main__":
 
     if args.comment is not None:
         WebOSIssue.instance().add_comment(key, args.comment)
+
+    if args.link_has_test_case is not None:
+        WebOSIssue.instance().create_issue_link('Test Case', key, args.link_has_test_case)
+    if args.link_is_a_test_case_for is not None:
+        WebOSIssue.instance().create_issue_link('Test Case', args.link_is_a_test_case_for, key)
+    if args.link_relates_to is not None:
+        WebOSIssue.instance().create_issue_link('Relates', key, args.link_relates_to)
 
     if args.key is not None:
         # For ticket update, exit here.
