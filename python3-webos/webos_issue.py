@@ -298,7 +298,7 @@ class WebOSIssue:
             return
         if 'Verify' != status:
             self._jira.set_issue_status(key, 'Verify')
-        self._jira.set_issue_status(key, 'Closed', fields={'resolution':{'name':'False Positive'}})
+        self._jira.set_issue_status(key, 'Closed', fields={'resolution':{'name':'Not a Bug'}})
 
     def create_issue_link(self, name, inward, outward):
         data = {

@@ -578,7 +578,7 @@ static void print_input_packet(struct record_format_payload *rec)
     if (!verbose)
         return;
 
-    printf("Event: time %ld.%06ld, idev(%d), ", ie->time.tv_sec, ie->time.tv_usec, rec->idev);
+    printf("Event: time %ld.%06ld, idev(%d), ", ie->input_event_sec, ie->input_event_usec, rec->idev);
     switch (ie->type) {
     case EV_SYN: // 0
         printf("--------------- SYN_REPORT ---------------\n");
@@ -844,7 +844,7 @@ static int playback_mode(const char *capture_path)
 {
     struct input_event_node *currptr;
     struct timespec t1, t2;
-    struct timeval basetime;
+    long long basetime_usec;
     int ret = EXIT_SUCCESS;
 
     open_workset_files_or_abort(capture_path, O_WRONLY | O_NONBLOCK, O_RDONLY);
@@ -912,7 +912,7 @@ static int playback_mode(const char *capture_path)
         goto exit;
     }
     // We obtain the basetime from the first packet
-    memcpy(&basetime, &currptr->rec.ie.time, sizeof(basetime));
+    basetime_usec = currptr->rec.ie.input_event_sec * 1000000 + currptr->rec.ie.input_event_usec;
     print_input_packet(&currptr->rec);
     // difference of t1 and t2 is the elapsed time we spent executing the previous packet
     if (clock_gettime(CLOCK_MONOTONIC_RAW, &t1) != 0) {
@@ -924,34 +924,33 @@ static int playback_mode(const char *capture_path)
 
     currptr = currptr->next;
     while (!should_exit && currptr != ielist.tail) {
-        struct timeval t1val, t2val, monodiff, timediff;
-        unsigned int usecs;
+        long long t1val, t2val, monodiff, timediff, curtime_usec;
 
         if (clock_gettime(CLOCK_MONOTONIC_RAW, &t2) != 0) {
             perror("Read raw monotonic clock 2");
             ret = EXIT_FAILURE;
             goto exit;
         }
-        TIMESPEC_TO_TIMEVAL(&t1val, &t1);
-        TIMESPEC_TO_TIMEVAL(&t2val, &t2);
+        t1val = t1.tv_sec * 1000000 + t1.tv_nsec / 1000;
+        t2val = t2.tv_sec * 1000000 + t2.tv_nsec / 1000;
         // monodiff stores MONOTONIC elapsed time between t1 and t2
-        timersub(&t2val, &t1val, &monodiff);
+        monodiff = t2val - t1val;
         memcpy(&t1, &t2, sizeof(t1));
         // timediff stores the difference between current packet time and previous basetime
-        timersub(&currptr->rec.ie.time, &basetime, &timediff);
-        memcpy(&basetime, &currptr->rec.ie.time, sizeof(basetime));
-        if (timercmp(&timediff, &monodiff, >)) {
-            struct timeval finaldiff;
+        curtime_usec = currptr->rec.ie.input_event_sec * 1000000 + currptr->rec.ie.input_event_usec;
+        timediff = curtime_usec - basetime_usec;
+        basetime_usec = curtime_usec;
+        if (timediff > monodiff) {
+            long long finaldiff;
 
             // Only sleep if we didn't spend more time executing previous packet than the time we should originally wait
-            timersub(&timediff, &monodiff, &finaldiff);
-            usecs = finaldiff.tv_sec * 1000000 + finaldiff.tv_usec;
-            printf("Sleeping %4u.%06u\n", usecs / 1000000, usecs % 1000000);
-            usleep(usecs);
+            finaldiff = timediff - monodiff;
+            printf("Sleeping %4u.%06u\n", finaldiff / 1000000, finaldiff % 1000000);
+            usleep(finaldiff);
         }
         // Reset the packet timestamp read from the capture file
-        currptr->rec.ie.time.tv_sec  = 0;
-        currptr->rec.ie.time.tv_usec = 0;
+        currptr->rec.ie.input_event_sec  = 0;
+        currptr->rec.ie.input_event_usec = 0;
 
         print_input_packet(&currptr->rec);
         exec_input_packet(&currptr->rec);
