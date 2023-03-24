@@ -18,6 +18,9 @@ from webos_common import Platform
 from webos_capture import WebOSCapture
 from webos_uploader import WebOSUploader
 
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+
 
 COMPONENT_PM = 'PM'
 DEFAULT_OUTDIR = '/tmp/jira'
@@ -52,12 +55,25 @@ class WebOSIssue:
         cls.instance = cls._getInstance
         return cls._instance
 
-    def __init__(self):
+    def __init__(self, retry_count=0):
         pw = Crypto.instance().decrypt(common.get_value('account', 'pw'))
+
+        session = None
+        if retry_count > 0:
+            logging.info('WebOSIssue.__init__: retry_count={}'.format(retry_count))
+            # https://urllib3.readthedocs.io/en/stable/reference/urllib3.util.html
+            retry = Retry(retry_count, backoff_factor=0.1)
+            adapter = HTTPAdapter(max_retries=retry)
+            session = requests.Session()
+            session.mount('http://', adapter)
+            session.mount('https://', adapter)
+
         self._jira = Jira(
             url=common.get_value('jira', 'url'),
             username=common.get_value('account', 'id'),
-            password=pw)
+            password=pw,
+            session=session)
+
         # Verify password first, if the password is incorrect, the account is locked.
         try:
             self._jira.user(common.get_value('account', 'id'))
@@ -72,7 +88,7 @@ class WebOSIssue:
                 password=pw)
         return
 
-    def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, issuetype=None, unique_summary=False, components=None, labels=[]):
+    def create_issue(self, summary=None, description=None, priority=None, reproducibility=None, issuetype=None, unique_summary=False, components=None, labels=[], assignee=None):
         if components is None:
             components = [COMPONENT_PM]
         if summary is None and description is None:
@@ -108,6 +124,8 @@ class WebOSIssue:
         fields['components'] = []
         for component in components:
             fields['components'].append({'name': component})
+        if assignee is not None:
+            fields['assignee'] = {'name': assignee}
 
         #if unique_summary:
         #    if summary is None:
@@ -166,10 +184,7 @@ class WebOSIssue:
             logging.error('Exception: {}'.format(ex))
         return COMPONENT_PM
 
-    def update_issue(self, key, summary=None, description=None, labels=[]):
-        if summary is None and description is None:
-            return True
-
+    def update_issue(self, key, summary=None, description=None, labels=[], assignee=None):
         fields = {}
         if summary is not None:
             fields['summary'] = summary
@@ -177,6 +192,8 @@ class WebOSIssue:
             fields['description'] = description
         if len(labels) > 0:
             fields['labels'] = labels
+        if assignee is not None:
+            fields['assignee'] = {'name': assignee}
 
         return self._jira.update_issue_field(key, fields)
 
@@ -315,6 +332,8 @@ class WebOSIssue:
 
 
 if __name__ == "__main__":
+    # Update the manual also, if necessary.
+    # http://collab.lge.com/main/display/WEBOSPM/webos_issue.py+manual
     parser = argparse.ArgumentParser(description=os.path.basename(__file__))
     parser.add_argument('--id',                      type=str, help='Jira user id')
     parser.add_argument('--pw',                      type=str, help='Jira user pw')
@@ -329,6 +348,7 @@ if __name__ == "__main__":
     # parser.add_argument('--components',              action='append', help='Issue components')
     parser.add_argument('--components',              type=str, nargs='*', help='Issue components')
     parser.add_argument('--labels',                  type=str, nargs='*', help='Issue labels to be appended')
+    parser.add_argument('--assignee',                type=str, help='Issue assignee')
 
     parser.add_argument('--attach-files',            type=str, nargs='*', help='All files are attached into jira ticket')
     parser.add_argument('--upload-files',            type=str, nargs='*', help='All files are uploaded into file server (The file on the server is deleted after the ticket is closed and a period of time has elapsed)')
@@ -351,12 +371,16 @@ if __name__ == "__main__":
     parser.add_argument('--enable-popup',            action='store_true', help='Display the result in a pop-up')
     parser.add_argument('--log-level',               type=str, help='Set log level [debug|info|warning|error]. The dafault value is warning.')
     parser.add_argument('--is-close',                action='store_true', help='(Deprecated) Close issue with --key')
+    parser.add_argument('--retry-count',             type=int, help='Number of retries on Jira connection failure')
 
     args = parser.parse_args()
 
     # set log level
     if args.log_level is not None:
         common.set_log_level(args.log_level)
+
+    if args.retry_count is not None and args.retry_count > 0:
+        WebOSIssue.instance(args.retry_count)
 
     # handle 'show' commands
     if args.show_id:
@@ -462,7 +486,7 @@ if __name__ == "__main__":
                 # remove duplicates
                 labels = list(dict.fromkeys(labels))
                 logging.debug("Labels: {}".format(labels))
-            WebOSIssue.instance().update_issue(args.key, args.summary, args.description, labels)
+            WebOSIssue.instance().update_issue(args.key, args.summary, args.description, labels, args.assignee)
         except Exception as ex:
             logging.error("{} : Failed to update '{}'".format(ex, args.key))
             if ex.response and ex.response.status_code == 401:
@@ -504,7 +528,7 @@ if __name__ == "__main__":
         elif args.crashed_executable is not None:
             components = [WebOSIssue.instance().guess_component(args.crashed_executable)]
         try:
-            result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.issuetype, args.unique_summary, components, labels)
+            result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.issuetype, args.unique_summary, components, labels, args.assignee)
             logging.info(result)
         except Exception as ex:
             error_text = ex.response.status_code if ex.response and ex.response.status_code else str(ex)
