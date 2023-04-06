@@ -63,7 +63,9 @@ static void Q_DBG(const char*msg, rpa_queue_t *q) {
 
 static void set_timeout(struct timespec * abstime, int wait_ms)
 {
-  clock_gettime(CLOCK_REALTIME, abstime);
+  if (clock_gettime(CLOCK_REALTIME, abstime) == -1) {
+    fprintf(stderr, "Error in clock_gettime\n");
+  }
   /* add seconds */
   abstime->tv_sec += (wait_ms / 1000);
   /* add and carry microseconds */

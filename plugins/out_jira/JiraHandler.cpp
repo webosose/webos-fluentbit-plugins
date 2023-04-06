@@ -352,8 +352,14 @@ int JiraHandler::initDefaultTime()
         return -1;
     }
 
-    def_tm_mtime = localtime(&def_stat.st_mtime);
-    def_tm_ctime = localtime(&def_stat.st_ctime);
+    if (NULL == (def_tm_mtime = localtime(&def_stat.st_mtime))) {
+        PLUGIN_ERROR("Failed localtime");
+        return -1;
+    }
+    if (NULL == (def_tm_ctime = localtime(&def_stat.st_ctime))) {
+        PLUGIN_ERROR("Failed localtime");
+        return -1;
+    }
 
     m_defaultTime.modify_year = def_tm_mtime->tm_year + 1900;
     m_defaultTime.modify_mon = def_tm_mtime->tm_mon + 1;
@@ -467,8 +473,14 @@ int JiraHandler::checkExeTime(const string& exe)
         return -1;
     }
 
-    exe_tm_mtime = localtime(&exe_stat.st_mtime);
-    exe_tm_ctime = localtime(&exe_stat.st_ctime);
+    if (NULL == (exe_tm_mtime = localtime(&exe_stat.st_mtime))) {
+        PLUGIN_ERROR("Failed localtime");
+        return -1;
+    }
+    if (NULL == (exe_tm_ctime = localtime(&exe_stat.st_ctime))) {
+        PLUGIN_ERROR("Failed localtime");
+        return -1;
+    }
 
     exe_time.modify_year = exe_tm_mtime->tm_year + 1900;
     exe_time.modify_mon = exe_tm_mtime->tm_mon + 1;
