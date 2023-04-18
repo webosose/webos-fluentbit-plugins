@@ -42,6 +42,13 @@ REPRODUCIBILITY_DICT = {
     "unknown": "I didn't try"
 }
 
+CUSTOMFIELD_FIXED_IN = "customfield_12415"
+CUSTOMFIELD_FOUND_IN = "customfield_18405"
+CUSTOMFIELD_FOUND_ON = "customfield_18122"
+CUSTOMFIELD_REGRESSION = "customfield_12504"
+CUSTOMFIELD_REPRODUCIBILITY = "customfield_11202"
+
+
 class WebOSIssue:
     _instance = None
 
@@ -98,8 +105,8 @@ class WebOSIssue:
             "project": {
                 "key": PROJECT_KEY
             },
-            "customfield_18405": NYX.instance().get_info()['webos_build_id'],
-            "customfield_18122": [
+            CUSTOMFIELD_FOUND_IN: NYX.instance().get_info()['webos_build_id'],
+            CUSTOMFIELD_FOUND_ON: [
                 {
                     "value": NYX.instance().get_found_on(),
                 }
@@ -119,7 +126,7 @@ class WebOSIssue:
             if reproducibility in REPRODUCIBILITY_DICT:
                 reproducibility = REPRODUCIBILITY_DICT[reproducibility]
             logging.info("reporducibility '{}'".format(reproducibility))
-            fields['customfield_11202'] = {'value': reproducibility}
+            fields[CUSTOMFIELD_REPRODUCIBILITY] = {'value': reproducibility}
         logging.info('components {}'.format(components))
         fields['components'] = []
         for component in components:
@@ -200,6 +207,18 @@ class WebOSIssue:
     def find_issue(self, key):
         return self._jira.issue(key)
 
+    def find_issue_with_summary(self, summary):
+        summary = summary.replace("[","\\\\[")
+        summary = summary.replace("]","\\\\]")
+        summary = summary.replace("\"","\\\"")
+        JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug ORDER BY key DESC'.format(PROJECT_KEY, summary)
+        logging.info(JQL)
+        response = self._jira.jql(JQL, limit=1)
+        if len(response['issues']) > 0:
+            # return response['issues'][0]['key']
+            return response['issues'][0]
+        return None
+
     def find_open_issue(self, summary):
         summary = summary.replace("[","\\\\[")
         summary = summary.replace("]","\\\\]")
@@ -222,7 +241,7 @@ class WebOSIssue:
         if len(response['issues']) == 0:
             return False
         try:
-            fixed_in = response['issues'][0]['fields']['customfield_12415']
+            fixed_in = response['issues'][0]['fields'][CUSTOMFIELD_FIXED_IN]
             logging.info('Fixed In : {}'.format(fixed_in))
             # '2108' or '2108, OSE 373' or 'OSE 374, 2109' or 'thud 108'
             fixed_in_list = [x.strip() for x in fixed_in.split(',')]
@@ -317,6 +336,12 @@ class WebOSIssue:
             self._jira.set_issue_status(key, 'Verify')
         self._jira.set_issue_status(key, 'Closed', fields={'resolution':{'name':'Not a Bug'}})
 
+    def rescreen_issue(self, key):
+        status = self._jira.get_issue_status(key)
+        if 'Closed' == status:
+            self._jira.set_issue_status(key, 'Verify')
+        self._jira.set_issue_status(key, 'Screen', fields={CUSTOMFIELD_REGRESSION:{'value': 'No'}})
+
     def create_issue_link(self, name, inward, outward):
         data = {
             'type': {'name': name},
@@ -372,6 +397,7 @@ if __name__ == "__main__":
     parser.add_argument('--log-level',               type=str, help='Set log level [debug|info|warning|error]. The dafault value is warning.')
     parser.add_argument('--is-close',                action='store_true', help='(Deprecated) Close issue with --key')
     parser.add_argument('--retry-count',             type=int, help='Number of retries on Jira connection failure')
+    parser.add_argument('--rescreen-if-exists',      action='store_true', help='Rescreen the issue if it exists. This is used with --unique-summary.')
 
     args = parser.parse_args()
 
@@ -457,15 +483,50 @@ if __name__ == "__main__":
         if args.summary is None:
             logging.error("'summary' is required")
             exit(1)
-        issue = WebOSIssue.instance().find_open_issue(args.summary)
+        #issue = WebOSIssue.instance().find_open_issue(args.summary)
+        #if issue is not None:
+        #    logging.info("'{}' is already created - {}".format(args.summary, issue['key']))
+        #    # UPDATE mode
+        #    args.key = issue['key']
+        #elif WebOSIssue.instance().check_fixed_in(args.summary) is True:
+        #    logging.info("'{}' is already fixed".format(args.summary))
+        #    exit(0)
+        # We may need to add "Found On." = "Signage-O20"/"TV-O22"/"OSE-RPi4" etc. to query.
+        # Because issues are managed separately for each platform
+        issue = WebOSIssue.instance().find_issue_with_summary(args.summary)
         if issue is not None:
-            logging.info("'{}' is already created - {}".format(args.summary, issue['key']))
-            # UPDATE mode
-            args.key = issue['key']
-        elif WebOSIssue.instance().check_fixed_in(args.summary) is True:
-            logging.info("'{}' is already fixed".format(args.summary))
-            exit(0)
-
+            logging.info("'{}' is already created with key {}".format(args.summary, issue['key']))
+            status_name = None
+            try:
+                status_name = issue['fields']['status']['name']
+                # exit(1)
+            except Exception as ex:
+                logging.error(ex)
+            # bug   (rescreen = True):
+            #       screen, analysis, ... => update
+            #       verify, closed        => rescreen
+            # crash (rescreen = False):
+            #       screen, analyais, ... => update
+            #       verify, closed        => create
+            if status_name == 'Verify' or status_name == 'Closed':
+                if WebOSIssue.instance().check_fixed_in(args.summary) is True:
+                    logging.info("'{}' is already fixed".format(args.summary))
+                    exit(0)
+                elif args.rescreen_if_exists:
+                    # re-screen (close->verify->screen)
+                    logging.info("Re-Screen {} from {}".format(issue['key'], status_name))
+                    WebOSIssue.instance().rescreen_issue(issue['key'])
+                    # UPDATE mode
+                    args.key = issue['key']
+                else:
+                    # CREATE mode
+                    issue = None
+            else:
+                # UPDATE mode
+                args.key = issue['key']
+        else:
+            # CREATE mode
+            pass
 
     labels = []
     if len(upload_files) > 0 or args.without_sysinfo is False or args.without_screenshot is False:
