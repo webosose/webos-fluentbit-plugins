@@ -71,9 +71,13 @@ std::string Time::getCurrentTime(const char* format)
     if (clock_gettime(CLOCK_REALTIME, &ts) == -1) {
         return "";
     }
+    const struct tm *tm = std::localtime(&ts.tv_sec);
+    if (tm == NULL) {
+        return "";
+    }
 
     std::string timeStr(30, '\0');
-    std::strftime(&timeStr[0], timeStr.size(), format, std::localtime(&ts.tv_sec));
+    std::strftime(&timeStr[0], timeStr.size(), format, tm);
 
     std::string timeString;
     for (auto it = timeStr.begin(); it != timeStr.end(); ++it) {

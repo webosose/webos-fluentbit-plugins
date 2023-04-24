@@ -805,7 +805,11 @@ static int migration_mode(const char *capture_path)
         ret = EXIT_FAILURE;
         goto Exit;
     }
-    contents = (unsigned char*)malloc(filesize);
+    if (NULL == (contents = (unsigned char*)malloc(filesize))) {
+        perror("malloc");
+        ret = EXIT_FAILURE;
+        goto Exit;
+    }
     while ((nRead = read(capture_file, contents+nReadTotal, filesize-nReadTotal)) > 0) {
         nReadTotal += nRead;
     }
@@ -912,7 +916,7 @@ static int playback_mode(const char *capture_path)
         goto exit;
     }
     // We obtain the basetime from the first packet
-    basetime_usec = currptr->rec.ie.input_event_sec * 1000000 + currptr->rec.ie.input_event_usec;
+    basetime_usec = currptr->rec.ie.input_event_sec * 1000000LL + currptr->rec.ie.input_event_usec;
     print_input_packet(&currptr->rec);
     // difference of t1 and t2 is the elapsed time we spent executing the previous packet
     if (clock_gettime(CLOCK_MONOTONIC_RAW, &t1) != 0) {
@@ -931,13 +935,13 @@ static int playback_mode(const char *capture_path)
             ret = EXIT_FAILURE;
             goto exit;
         }
-        t1val = t1.tv_sec * 1000000 + t1.tv_nsec / 1000;
-        t2val = t2.tv_sec * 1000000 + t2.tv_nsec / 1000;
+        t1val = t1.tv_sec * 1000000LL + t1.tv_nsec / 1000;
+        t2val = t2.tv_sec * 1000000LL + t2.tv_nsec / 1000;
         // monodiff stores MONOTONIC elapsed time between t1 and t2
         monodiff = t2val - t1val;
         memcpy(&t1, &t2, sizeof(t1));
         // timediff stores the difference between current packet time and previous basetime
-        curtime_usec = currptr->rec.ie.input_event_sec * 1000000 + currptr->rec.ie.input_event_usec;
+        curtime_usec = currptr->rec.ie.input_event_sec * 1000000LL + currptr->rec.ie.input_event_usec;
         timediff = curtime_usec - basetime_usec;
         basetime_usec = curtime_usec;
         if (timediff > monodiff) {
@@ -945,7 +949,7 @@ static int playback_mode(const char *capture_path)
 
             // Only sleep if we didn't spend more time executing previous packet than the time we should originally wait
             finaldiff = timediff - monodiff;
-            printf("Sleeping %4u.%06u\n", finaldiff / 1000000, finaldiff % 1000000);
+            printf("Sleeping %4llu.%06llu\n", finaldiff / 1000000, finaldiff % 1000000);
             usleep(finaldiff);
         }
         // Reset the packet timestamp read from the capture file

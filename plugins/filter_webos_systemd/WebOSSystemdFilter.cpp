@@ -287,7 +287,7 @@ void WebOSSystemdFilter::processPendings(msgpack_unpacked* result, msgpack_packe
                 // object extra : only for appExecution
                 if (kv.second.hasKey("_beginMs")) {
                     int64_t beginMs = kv.second["_beginMs"].asNumber<int64_t>();
-                    timespec beginTs = {beginMs/1000, (beginMs%1000)*1000*1000};
+                    timespec beginTs = {(long)beginMs/1000, (long)(beginMs%1000)*1000*1000};
                     if (m_minPrevRealtime < beginTs && beginTs < m_maxPrevRealtime)
                         beginTs = beginTs + m_realtimeDiff - m_monotimeDiff;
                     timespec duration = ts.tm - beginTs;
