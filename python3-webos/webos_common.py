@@ -211,18 +211,24 @@ class NYX:
         return self.info
 
     def get_found_on(self):
-        device_names = get_value('deviceName')
-        name = self.info['device_name']
-
-        if name in device_names:
-            return device_names[name]
-        # The device_name can be the same in the upper layer of webos,
-        # So distinguish by adding the webos_name; 'webOS XX Reference'
+        found_on = None
         webos_name = self.info['webos_name']
         try:
-            return webos_name.split(' ')[1] + '-' + name.upper()
+            # webOS Apollo Reference Minimal
+            # webOS Apollo Reference Main
+            # webOS TV Reference
+            # webOS Signage Reference
+            # webOS OSE
+            found_on = webos_name.split(' ')[1] + '-'
         except:
-            return None
+            return found_on
+        device_names = get_value('deviceName')
+        name = self.info['device_name']
+        if name in device_names:
+            found_on = found_on + device_names[name]
+        else:
+            found_on = found_on + name.upper()
+        return found_on
 
     def print(self):
         print('serial_number: {}'.format(self.info['serial_number']))
