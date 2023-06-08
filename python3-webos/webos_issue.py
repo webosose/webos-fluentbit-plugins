@@ -47,6 +47,7 @@ CUSTOMFIELD_FOUND_IN = "customfield_18405"
 CUSTOMFIELD_FOUND_ON = "customfield_18122"
 CUSTOMFIELD_REGRESSION = "customfield_12504"
 CUSTOMFIELD_REPRODUCIBILITY = "customfield_11202"
+CUSTOMFIELD_TRIAGE_STATUS = "customfield_18123"
 
 
 class WebOSIssue:
@@ -249,6 +250,8 @@ class WebOSIssue:
         try:
             fixed_in = issue['fields'][CUSTOMFIELD_FIXED_IN]
             logging.info('Fixed In : {}'.format(fixed_in))
+            if fixed_in is None:
+                return False
             # '2108' or '2108, OSE 373' or 'OSE 374, 2109' or 'thud 108'
             fixed_in_list = [x.strip() for x in fixed_in.split(',')]
             for x in fixed_in_list:
@@ -264,7 +267,7 @@ class WebOSIssue:
             if int(fixed_build_id) > int(device_build_id):
                 return True
         except Exception as ex:
-            logging.error(ex)
+            logging.warning(ex)
         return False
 
     def attach_files(self, key, files):
@@ -342,11 +345,23 @@ class WebOSIssue:
             self._jira.set_issue_status(key, 'Verify')
         self._jira.set_issue_status(key, 'Closed', fields={'resolution':{'name':'Not a Bug'}})
 
-    def rescreen_issue(self, key):
+    def rescreen_issue(self, key, components):
         status = self._jira.get_issue_status(key)
         if 'Closed' == status:
             self._jira.set_issue_status(key, 'Verify')
         self._jira.set_issue_status(key, 'Screen', fields={CUSTOMFIELD_REGRESSION:{'value': 'No'}})
+        # reset components and assignee
+        fields = {
+            CUSTOMFIELD_FOUND_IN: NYX.instance().get_info()['webos_build_id'],
+            CUSTOMFIELD_TRIAGE_STATUS: None
+        }
+        if isinstance(components, list) and len(components) > 0:
+            fields['components'] = []
+            for component in components:
+                fields['components'].append({'name': component})
+        self._jira.update_issue_field(key, fields)
+        # -1 means Automatic
+        self._jira.assign_issue(key, -1)
 
     def create_issue_link(self, name, inward, outward):
         data = {
@@ -521,7 +536,7 @@ if __name__ == "__main__":
                 elif args.rescreen_if_exists:
                     # re-screen (close->verify->screen)
                     logging.info("Re-Screen {} from {}".format(issue['key'], status_name))
-                    WebOSIssue.instance().rescreen_issue(issue['key'])
+                    WebOSIssue.instance().rescreen_issue(issue['key'], args.components)
                     # UPDATE mode
                     args.key = issue['key']
                 else:
