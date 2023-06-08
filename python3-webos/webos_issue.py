@@ -207,17 +207,31 @@ class WebOSIssue:
     def find_issue(self, key):
         return self._jira.issue(key)
 
-    def find_issue_with_summary(self, summary):
-        summary = summary.replace("[","\\\\[")
-        summary = summary.replace("]","\\\\]")
-        summary = summary.replace("\"","\\\"")
-        JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug ORDER BY key DESC'.format(PROJECT_KEY, summary)
+    def find_issue_with_exact_summary(self, summary):
+        updated_summary = summary.replace("[","\\\\[")
+        updated_summary = updated_summary.replace("]","\\\\]")
+        updated_summary = updated_summary.replace("\"","\\\"")
+        JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug ORDER BY key DESC'.format(PROJECT_KEY, updated_summary)
         logging.info(JQL)
-        response = self._jira.jql(JQL, limit=1)
-        if len(response['issues']) > 0:
-            # return response['issues'][0]['key']
-            return response['issues'][0]
-        return None
+        start = 0
+        limit = 100
+        while True:
+            response = self._jira.jql(JQL, start=start, limit=limit)
+            logging.info('len : {} (start : {}, limit : {})'.format(len(response['issues']), start, limit))
+            if len(response['issues']) == 0:
+                return None
+            for issue in response['issues']:
+                # summary = "\\[TAS Failed\\]\\[OSE\\]\\ ABC"
+                # Because jira query finds both cases below, so we should check if the summary matches exactly.
+                # 1. [TAS Failed][OSE] ABC
+                # 2. [TAS Failed][OSE Emulator] ABC
+                if issue['fields']['summary'] != summary:
+                    logging.debug('{} : Not matched ({})'.format(issue['key'], issue['fields']['summary']))
+                    continue
+                logging.info('{} : Matched'.format(issue['key']))
+                return issue
+            start = limit
+            limit = limit + 100
 
     def find_open_issue(self, summary):
         summary = summary.replace("[","\\\\[")
@@ -231,17 +245,9 @@ class WebOSIssue:
             return response['issues'][0]
         return None
 
-    def check_fixed_in(self, summary):
-        summary = summary.replace("[","\\\\[")
-        summary = summary.replace("]","\\\\]")
-        summary = summary.replace("\"","\\\"")
-        JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug AND "Fixed In" is not Empty ORDER BY resolutiondate DESC'.format(PROJECT_KEY, summary)
-        logging.info(JQL)
-        response = self._jira.jql(JQL, limit=1)
-        if len(response['issues']) == 0:
-            return False
+    def check_fixed_in(self, issue):
         try:
-            fixed_in = response['issues'][0]['fields'][CUSTOMFIELD_FIXED_IN]
+            fixed_in = issue['fields'][CUSTOMFIELD_FIXED_IN]
             logging.info('Fixed In : {}'.format(fixed_in))
             # '2108' or '2108, OSE 373' or 'OSE 374, 2109' or 'thud 108'
             fixed_in_list = [x.strip() for x in fixed_in.split(',')]
@@ -493,7 +499,7 @@ if __name__ == "__main__":
         #    exit(0)
         # We may need to add "Found On." = "Signage-O20"/"TV-O22"/"OSE-RPi4" etc. to query.
         # Because issues are managed separately for each platform
-        issue = WebOSIssue.instance().find_issue_with_summary(args.summary)
+        issue = WebOSIssue.instance().find_issue_with_exact_summary(args.summary)
         if issue is not None:
             logging.info("'{}' is already created with key {}".format(args.summary, issue['key']))
             status_name = None
@@ -509,7 +515,7 @@ if __name__ == "__main__":
             #       screen, analyais, ... => update
             #       verify, closed        => create
             if status_name == 'Verify' or status_name == 'Closed':
-                if WebOSIssue.instance().check_fixed_in(args.summary) is True:
+                if WebOSIssue.instance().check_fixed_in(issue) is True:
                     logging.info("'{}' is already fixed".format(args.summary))
                     exit(0)
                 elif args.rescreen_if_exists:
