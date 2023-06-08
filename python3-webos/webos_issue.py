@@ -47,6 +47,7 @@ CUSTOMFIELD_FOUND_IN = "customfield_18405"
 CUSTOMFIELD_FOUND_ON = "customfield_18122"
 CUSTOMFIELD_REGRESSION = "customfield_12504"
 CUSTOMFIELD_REPRODUCIBILITY = "customfield_11202"
+CUSTOMFIELD_TRIAGE_STATUS = "customfield_18123"
 
 
 class WebOSIssue:
@@ -207,17 +208,31 @@ class WebOSIssue:
     def find_issue(self, key):
         return self._jira.issue(key)
 
-    def find_issue_with_summary(self, summary):
-        summary = summary.replace("[","\\\\[")
-        summary = summary.replace("]","\\\\]")
-        summary = summary.replace("\"","\\\"")
-        JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug ORDER BY key DESC'.format(PROJECT_KEY, summary)
+    def find_issue_with_exact_summary(self, summary):
+        updated_summary = summary.replace("[","\\\\[")
+        updated_summary = updated_summary.replace("]","\\\\]")
+        updated_summary = updated_summary.replace("\"","\\\"")
+        JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug ORDER BY key DESC'.format(PROJECT_KEY, updated_summary)
         logging.info(JQL)
-        response = self._jira.jql(JQL, limit=1)
-        if len(response['issues']) > 0:
-            # return response['issues'][0]['key']
-            return response['issues'][0]
-        return None
+        start = 0
+        limit = 100
+        while True:
+            response = self._jira.jql(JQL, start=start, limit=limit)
+            logging.info('len : {} (start : {}, limit : {})'.format(len(response['issues']), start, limit))
+            if len(response['issues']) == 0:
+                return None
+            for issue in response['issues']:
+                # summary = "\\[TAS Failed\\]\\[OSE\\]\\ ABC"
+                # Because jira query finds both cases below, so we should check if the summary matches exactly.
+                # 1. [TAS Failed][OSE] ABC
+                # 2. [TAS Failed][OSE Emulator] ABC
+                if issue['fields']['summary'] != summary:
+                    logging.debug('{} : Not matched ({})'.format(issue['key'], issue['fields']['summary']))
+                    continue
+                logging.info('{} : Matched'.format(issue['key']))
+                return issue
+            start = limit
+            limit = limit + 100
 
     def find_open_issue(self, summary):
         summary = summary.replace("[","\\\\[")
@@ -231,18 +246,12 @@ class WebOSIssue:
             return response['issues'][0]
         return None
 
-    def check_fixed_in(self, summary):
-        summary = summary.replace("[","\\\\[")
-        summary = summary.replace("]","\\\\]")
-        summary = summary.replace("\"","\\\"")
-        JQL = 'project = {} AND summary ~ "{}" AND issuetype = Bug AND "Fixed In" is not Empty ORDER BY resolutiondate DESC'.format(PROJECT_KEY, summary)
-        logging.info(JQL)
-        response = self._jira.jql(JQL, limit=1)
-        if len(response['issues']) == 0:
-            return False
+    def check_fixed_in(self, issue):
         try:
-            fixed_in = response['issues'][0]['fields'][CUSTOMFIELD_FIXED_IN]
+            fixed_in = issue['fields'][CUSTOMFIELD_FIXED_IN]
             logging.info('Fixed In : {}'.format(fixed_in))
+            if fixed_in is None:
+                return False
             # '2108' or '2108, OSE 373' or 'OSE 374, 2109' or 'thud 108'
             fixed_in_list = [x.strip() for x in fixed_in.split(',')]
             for x in fixed_in_list:
@@ -258,7 +267,7 @@ class WebOSIssue:
             if int(fixed_build_id) > int(device_build_id):
                 return True
         except Exception as ex:
-            logging.error(ex)
+            logging.warning(ex)
         return False
 
     def attach_files(self, key, files):
@@ -336,11 +345,23 @@ class WebOSIssue:
             self._jira.set_issue_status(key, 'Verify')
         self._jira.set_issue_status(key, 'Closed', fields={'resolution':{'name':'Not a Bug'}})
 
-    def rescreen_issue(self, key):
+    def rescreen_issue(self, key, components):
         status = self._jira.get_issue_status(key)
         if 'Closed' == status:
             self._jira.set_issue_status(key, 'Verify')
         self._jira.set_issue_status(key, 'Screen', fields={CUSTOMFIELD_REGRESSION:{'value': 'No'}})
+        # reset components and assignee
+        fields = {
+            CUSTOMFIELD_FOUND_IN: NYX.instance().get_info()['webos_build_id'],
+            CUSTOMFIELD_TRIAGE_STATUS: None
+        }
+        if isinstance(components, list) and len(components) > 0:
+            fields['components'] = []
+            for component in components:
+                fields['components'].append({'name': component})
+        self._jira.update_issue_field(key, fields)
+        # -1 means Automatic
+        self._jira.assign_issue(key, -1)
 
     def create_issue_link(self, name, inward, outward):
         data = {
@@ -493,7 +514,7 @@ if __name__ == "__main__":
         #    exit(0)
         # We may need to add "Found On." = "Signage-O20"/"TV-O22"/"OSE-RPi4" etc. to query.
         # Because issues are managed separately for each platform
-        issue = WebOSIssue.instance().find_issue_with_summary(args.summary)
+        issue = WebOSIssue.instance().find_issue_with_exact_summary(args.summary)
         if issue is not None:
             logging.info("'{}' is already created with key {}".format(args.summary, issue['key']))
             status_name = None
@@ -509,13 +530,13 @@ if __name__ == "__main__":
             #       screen, analyais, ... => update
             #       verify, closed        => create
             if status_name == 'Verify' or status_name == 'Closed':
-                if WebOSIssue.instance().check_fixed_in(args.summary) is True:
+                if WebOSIssue.instance().check_fixed_in(issue) is True:
                     logging.info("'{}' is already fixed".format(args.summary))
                     exit(0)
                 elif args.rescreen_if_exists:
                     # re-screen (close->verify->screen)
                     logging.info("Re-Screen {} from {}".format(issue['key'], status_name))
-                    WebOSIssue.instance().rescreen_issue(issue['key'])
+                    WebOSIssue.instance().rescreen_issue(issue['key'], args.components)
                     # UPDATE mode
                     args.key = issue['key']
                 else:
