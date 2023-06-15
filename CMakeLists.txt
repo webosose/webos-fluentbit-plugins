@@ -28,7 +28,6 @@ webos_include_install_paths()
 add_subdirectory(plugins)
 add_subdirectory(src/coredump_example)
 add_subdirectory(python3-webos)
-add_subdirectory(input_simulator)
 # add_subdirectory(inotify_coredump_test)
 
 # install
