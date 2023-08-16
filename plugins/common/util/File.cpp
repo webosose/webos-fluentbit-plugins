@@ -109,7 +109,7 @@ bool File::createFile(const string& path)
 
 bool File::createDir(const string& path)
 {
-    return (0 == g_mkdir_with_parents(path.c_str(), 0755));
+    return (0 == g_mkdir_with_parents(path.c_str(), 0770));
 }
 
 bool File::removeDir(const string& path)
