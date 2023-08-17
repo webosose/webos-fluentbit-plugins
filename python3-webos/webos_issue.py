@@ -229,6 +229,14 @@ class WebOSIssue:
                 if issue['fields']['summary'] != summary:
                     logging.debug('{} : Not matched ({})'.format(issue['key'], issue['fields']['summary']))
                     continue
+                status_name = None
+                try:
+                    status_name = issue['fields']['status']['name']
+                except Exception as ex:
+                    pass
+                if status_name == 'Closed':
+                    logging.info('{} : Matched, but already closed.'.format(issue['key']))
+                    return None
                 logging.info('{} : Matched'.format(issue['key']))
                 return issue
             start = limit
@@ -345,6 +353,14 @@ class WebOSIssue:
             self._jira.set_issue_status(key, 'Verify')
         self._jira.set_issue_status(key, 'Closed', fields={'resolution':{'name':'Not a Bug'}})
 
+    def verify_issue(self, key):
+        status = self._jira.get_issue_status(key)
+        if 'Verify' == status:
+            return
+        if 'Integration' == status:
+            self._jira.set_issue_status(key, 'Implementation')
+        self._jira.set_issue_status(key, 'Verify')
+
     def rescreen_issue(self, key, components):
         status = self._jira.get_issue_status(key)
         if 'Closed' == status:
@@ -419,6 +435,7 @@ if __name__ == "__main__":
     parser.add_argument('--is-close',                action='store_true', help='(Deprecated) Close issue with --key')
     parser.add_argument('--retry-count',             type=int, help='Number of retries on Jira connection failure')
     parser.add_argument('--rescreen-if-exists',      action='store_true', help='Rescreen the issue if it exists. This is used with --unique-summary.')
+    parser.add_argument('--verify',                  action='store_true', help='Verify issue with --key. (for test automation)')
 
     args = parser.parse_args()
 
@@ -481,6 +498,10 @@ if __name__ == "__main__":
 
     if (args.is_close or args.close) and args.key:
         WebOSIssue.instance().close_issue(args.key)
+        exit(EXIT_STATUS_SUCCESS)
+
+    if args.verify and args.key:
+        WebOSIssue.instance().verify_issue(args.key)
         exit(EXIT_STATUS_SUCCESS)
 
     key = args.key
