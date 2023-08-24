@@ -368,7 +368,6 @@ class WebOSIssue:
         self._jira.set_issue_status(key, 'Screen', fields={CUSTOMFIELD_REGRESSION:{'value': 'No'}})
         # reset components and assignee
         fields = {
-            CUSTOMFIELD_FOUND_IN: NYX.instance().get_info()['webos_build_id'],
             CUSTOMFIELD_TRIAGE_STATUS: None
         }
         if isinstance(components, list) and len(components) > 0:
