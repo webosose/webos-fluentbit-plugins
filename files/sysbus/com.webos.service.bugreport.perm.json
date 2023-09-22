@@ -3,6 +3,6 @@
         "application.launcher",
         "notification.operation",
         "surfacemanager.devutility",
-	    "physicaldevice.query"
+        "physicaldevice.query"
     ]
 }

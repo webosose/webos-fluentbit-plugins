@@ -1,0 +1,7 @@
+{
+    "diagnostics.telemetry": [
+        "com.webos.service.bugreport/getConfig",
+        "com.webos.service.bugreport/setConfig",
+        "com.webos.service.bugreport/createBug"
+    ]
+}
