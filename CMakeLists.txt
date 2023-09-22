@@ -35,4 +35,10 @@ file(GLOB fluent-bit_conf files/conf/*.conf)
 
 install(FILES ${fluent-bit_conf} DESTINATION ${WEBOS_INSTALL_SYSCONFDIR}/fluent-bit)
 
-webos_build_system_bus_files()
+if(${USE_NEW_ACG} MATCHES TRUE)
+    message("USE_NEW_ACG is ${USE_NEW_ACG}")
+    webos_build_system_bus_files(files/sysbus_new)
+else()
+    webos_build_system_bus_files(files/sysbus)
+endif()
+

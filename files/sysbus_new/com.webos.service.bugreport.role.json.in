@@ -1,0 +1,24 @@
+{
+    "exeName": "@WEBOS_INSTALL_BINDIR@/fluent-bit",
+    "type": "regular",
+    "trustLevel": "oem",
+    "allowedNames": [
+        "com.webos.rdx.*",
+        "com.webos.rdxd",
+        "com.webos.service.bugreport"
+    ],
+    "permissions": [
+        {
+            "service": "com.webos.rdx.*",
+            "outbound": ["com.webos.pmlogd", "com.palm.uploadd"]
+        },
+        {
+            "service": "com.webos.rdxd",
+            "outbound": ["com.webos.settingsservice", "com.webos.pmlogd", "com.webos.service.config", "com.palm.uploadd"]
+        },
+        {
+            "service": "com.webos.service.bugreport",
+            "outbound": ["com.webos.service.pdm", "com.webos.surfacemanager", "com.webos.service.applicationmanager", "com.webos.notification"]
+        }
+    ]
+}

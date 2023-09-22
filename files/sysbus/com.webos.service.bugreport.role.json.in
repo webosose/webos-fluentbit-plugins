@@ -4,11 +4,16 @@
     "trustLevel": "oem",
     "allowedNames": [
         "com.webos.rdx.*",
+        "com.webos.rdxd",
         "com.webos.service.bugreport"
     ],
     "permissions": [
         {
             "service": "com.webos.rdx.*",
+            "outbound": ["*"]
+        },
+        {
+            "service": "com.webos.rdxd",
             "outbound": ["*"]
         },
         {
