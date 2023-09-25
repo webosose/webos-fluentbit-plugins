@@ -192,7 +192,7 @@ class WebOSIssue:
             logging.error('Exception: {}'.format(ex))
         return COMPONENT_PM
 
-    def update_issue(self, key, summary=None, description=None, labels=[], assignee=None):
+    def update_issue(self, key, summary=None, description=None, labels=[]):
         fields = {}
         if summary is not None:
             fields['summary'] = summary
@@ -200,8 +200,6 @@ class WebOSIssue:
             fields['description'] = description
         if len(labels) > 0:
             fields['labels'] = labels
-        if assignee is not None:
-            fields['assignee'] = {'name': assignee}
 
         return self._jira.update_issue_field(key, fields)
 
@@ -588,7 +586,7 @@ if __name__ == "__main__":
                 # remove duplicates
                 labels = list(dict.fromkeys(labels))
                 logging.debug("Labels: {}".format(labels))
-            WebOSIssue.instance().update_issue(args.key, args.summary, args.description, labels, args.assignee)
+            WebOSIssue.instance().update_issue(args.key, args.summary, args.description, labels)
         except Exception as ex:
             logging.error("{} : Failed to update '{}'".format(ex, args.key))
             if ex.response and ex.response.status_code == 401:
