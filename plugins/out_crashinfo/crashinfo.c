@@ -35,9 +35,11 @@ static int cb_crashinfo_exit(void *data, struct flb_config *config)
     return exitOutCrashinfoHandler(data, config);
 }
 
+char name[] = "crashinfo";
+char description[] = "crashinfo.out";
 struct flb_output_plugin out_crashinfo_plugin = {
-    .name         = "crashinfo",
-    .description  = "crashinfo.out",
+    .name         = name,
+    .description  = description,
     .cb_init      = cb_crashinfo_init,
     .cb_flush     = cb_crashinfo_flush,
     .cb_exit      = cb_crashinfo_exit,

@@ -35,9 +35,11 @@ static int cb_jira_exit(void *data, struct flb_config *config)
     return exitJiraHandler(data, config);
 }
 
+char name[] = "jira";
+char description[] = "Create JIRA";
 struct flb_output_plugin out_jira_plugin = {
-    .name         = "jira",
-    .description  = "Create JIRA",
+    .name         = name,
+    .description  = description,
     .cb_init      = cb_jira_init,
     .cb_flush     = cb_jira_flush,
     .cb_exit      = cb_jira_exit,

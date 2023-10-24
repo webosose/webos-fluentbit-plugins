@@ -60,7 +60,7 @@ string BugreportScreenshotManager::captureCompositorOutput()
     string suffix = ".jpg";
     string filename = prefix + suffix;
     string filepath = File::join(DIR_SCREENSHOTS, filename);
-    int index = 2;
+    unsigned int index = 2;
     while (access(filepath.c_str(), F_OK) == 0) {
         filename = prefix + "_" + to_string(index++) + suffix;
         filepath = File::join(DIR_SCREENSHOTS, filename);
@@ -137,7 +137,7 @@ JValue BugreportScreenshotManager::toJson() const
         return array;
     }
     for (const string& screenshot : screenshots) {
-        array.append(screenshot);
+        array.append(JValue{screenshot});
     }
     return array;
 }

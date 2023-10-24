@@ -117,17 +117,28 @@ int BugreportHandler::onInit(struct flb_input_instance *ins, struct flb_config *
         return -1;
     }
     registerCategory("/", BugreportHandler::METHOD_TABLE, NULL, NULL);
-    setCategoryData("/", this);
+    try {
+        setCategoryData("/", this);
+    } catch (LS::Error& lserror) {
+        PLUGIN_ERROR("Failed to setCategoryData; %s", lserror.what());
+        return -1;
+    }
     if (!LunaHandle::initialize(m_queue)) {
         PLUGIN_ERROR("Failed to initialize luna handle");
         rpa_queue_term(m_queue);
         rpa_queue_destroy(m_queue);
         return -1;
     }
-    m_serverStatus = LunaHandle::registerServerStatus("com.webos.service.pdm",
-            std::bind(&BugreportHandler::onRegisterServerStatus, this, placeholders::_1));
+    try {
+        m_serverStatus = LunaHandle::registerServerStatus("com.webos.service.pdm",
+                std::bind(&BugreportHandler::onRegisterServerStatus, this, placeholders::_1));
+    } catch (LS::Error& lserror) {
+        PLUGIN_ERROR("Failed to registerServerStatus com.webos.service.pdm; %s", lserror.what());
+        return -1;
+    }
+
     // fluentbit engine calls 'onExit' when terminating, only if context is registered.
-    flb_input_set_context(ins, this);
+    flb_input_set_context(ins, ins);
     if (flb_input_set_collector_time(ins, collectBugreport, DEFAULT_INTERVAL_SEC, DEFAULT_INTERVAL_NSEC, config) == -1) {
         PLUGIN_ERROR("Failed in flb_input_set_collector_time");
         rpa_queue_term(m_queue);
@@ -153,7 +164,7 @@ int BugreportHandler::onCollect(struct flb_input_instance *ins, struct flb_confi
     msgpack_packer packer;
     msgpack_sbuffer sbuffer;
     while (true) {
-        const char *message = NULL;
+        char *message = NULL;
         if (!rpa_queue_timedpop(m_queue, (void **)&message, RPA_WAIT_NONE))
             break;
         PLUGIN_DEBUG("POP %s", message);
@@ -188,7 +199,7 @@ bool BugreportHandler::onRegisterServerStatus(bool isConnected)
                 method.c_str(),
                 requestPayload.stringify().c_str(),
                 BugreportHandler::onGetAttachedNonStorageDeviceList,
-                this
+                NULL
         );
     } else {
         m_getAttachedNonStorageDeviceListCall.cancel();
@@ -199,23 +210,19 @@ bool BugreportHandler::onRegisterServerStatus(bool isConnected)
 bool BugreportHandler::onGetAttachedNonStorageDeviceList(LSHandle *sh, LSMessage *message, void *ctx)
 {
     PLUGIN_INFO();
-    BugreportHandler* self = (BugreportHandler*)ctx;
-    if (!self) {
-        PLUGIN_ERROR("ctx is null");
-        return false;
-    }
+    BugreportHandler& self = BugreportHandler::getInstance();
 
-    int oldFd = self->m_keyboardFd;
+    int oldFd = self.m_keyboardFd;
     if (oldFd != -1) {
         // always use the first found keyboard even if a new keyboard is attached
         return true;
     }
     int newFd = findKeyboardFd();
     if (oldFd != newFd) {
-        self->m_keyboardFd = newFd;
+        self.m_keyboardFd = newFd;
         PLUGIN_INFO("Keyboard fd : %d", newFd);
         GIOChannel *channel = g_io_channel_unix_new(newFd);
-        g_io_add_watch(channel, GIOCondition(G_IO_IN|G_IO_ERR|G_IO_HUP), onKeyboardEvent, self);
+        g_io_add_watch(channel, GIOCondition(G_IO_IN|G_IO_ERR|G_IO_HUP), onKeyboardEvent, NULL);
         g_io_channel_unref(channel);
     }
     return true;
@@ -281,28 +288,26 @@ int BugreportHandler::findKeyboardFd()
 gboolean BugreportHandler::onKeyboardEvent(GIOChannel *channel, GIOCondition condition, gpointer data)
 {
     // PLUGIN_DEBUG();
-    BugreportHandler* self = (BugreportHandler*)data;
-    if (!self) {
-        PLUGIN_ERROR("ctx is null");
-        return FALSE;
-    }
+    BugreportHandler& self = BugreportHandler::getInstance();
     if (condition & (G_IO_HUP|G_IO_ERR)) {
         PLUGIN_INFO("G_IO_HUP or G_IO_ERR");
         g_io_channel_shutdown(channel, TRUE, NULL);
-        self->m_keyboardFd = -1;
+        self.m_keyboardFd = -1;
         return FALSE;
     }
 
     struct input_event ev[64];
-    int rd, value, size = sizeof(struct input_event);
+    ssize_t rd;
+    int value;
+    size_t size = sizeof(struct input_event);
     int fd = g_io_channel_unix_get_fd(channel);
 
-    if ((rd = read(fd, ev, size * 64)) < size) {
+    if ((rd = read(fd, ev, size * 64)) < 0 || rd < size) {
         // immediately close the device to prevent bugreportd from trying to
         // read key events from the invalid device.
         PLUGIN_WARN("Read %d", rd);
         g_io_channel_shutdown(channel, TRUE, NULL);
-        self->m_keyboardFd = -1;
+        self.m_keyboardFd = -1;
         return FALSE;
     }
 
@@ -310,32 +315,32 @@ gboolean BugreportHandler::onKeyboardEvent(GIOChannel *channel, GIOCondition con
         // PLUGIN_DEBUG("Received key code %d(%s)", ev[1].code, ev[1].value == 1 ? "DOWN" : "UP");
         switch (ev[1].code) {
             case KEYCODE_LEFT_CTRL:
-                self->m_isCtrlPressed = (ev[1].value == 1) ? true : false;
-                PLUGIN_DEBUG("CTRL %s", (self->m_isCtrlPressed) ? "DOWN" : "UP");
+                self.m_isCtrlPressed = (ev[1].value == 1) ? true : false;
+                PLUGIN_DEBUG("CTRL %s", (self.m_isCtrlPressed) ? "DOWN" : "UP");
                 break;
             case KEYCODE_LEFT_ALT:
-                self->m_isAltPressed = (ev[1].value == 1) ? true : false;
-                PLUGIN_DEBUG("ALT %s", (self->m_isAltPressed) ? "DOWN" : "UP");
+                self.m_isAltPressed = (ev[1].value == 1) ? true : false;
+                PLUGIN_DEBUG("ALT %s", (self.m_isAltPressed) ? "DOWN" : "UP");
                 break;
             case KEYCODE_F9:
-                if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
+                if (ev[1].value != 1 || !self.m_isCtrlPressed || !self.m_isAltPressed)
                     break;
-                self->processF9();
+                self.processF9();
                 break;
             case KEYCODE_F10:
-                if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
+                if (ev[1].value != 1 || !self.m_isCtrlPressed || !self.m_isAltPressed)
                     break;
-                self->processF10();
+                self.processF10();
                 break;
             case KEYCODE_F11:
-                if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
+                if (ev[1].value != 1 || !self.m_isCtrlPressed || !self.m_isAltPressed)
                     break;
-                self->processF11();
+                self.processF11();
                 break;
             case KEYCODE_F12:
-                if (ev[1].value != 1 || !self->m_isCtrlPressed || !self->m_isAltPressed)
+                if (ev[1].value != 1 || !self.m_isCtrlPressed || !self.m_isAltPressed)
                     break;
-                self->processF12();
+                self.processF12();
                 break;
             default:
                 break;
@@ -356,7 +361,7 @@ void BugreportHandler::createToast(const string& message)
             "luna://com.webos.notification/createToast",
             payload.stringify().c_str(),
             (LSFilterFunc)BugreportHandler::onCreateToast,
-            this,
+            NULL,
             NULL,
             &lserror)) {
         PLUGIN_ERROR("Failed in LSCall (%d) %s", lserror.error_code, lserror.message);
@@ -377,7 +382,7 @@ void BugreportHandler::launchBugreportApp()
             "luna://com.webos.service.applicationmanager/launch",
             "{\"id\":\"com.webos.app.bugreport\"}",
             (LSFilterFunc)BugreportHandler::onLaunchBugreportApp,
-            this,
+            NULL,
             NULL,
             &lserror)) {
         PLUGIN_ERROR("Failed in LSCall (%d) %s", lserror.error_code, lserror.message);
@@ -393,6 +398,10 @@ bool BugreportHandler::onLaunchBugreportApp(LSHandle *sh, LSMessage *message, vo
 bool BugreportHandler::pushToRpaQueue(JValue payload)
 {
     string payloadStr = payload.stringify();
+    if (UINT_MAX - payloadStr.length() < 1) {
+        PLUGIN_ERROR("Wrong payload length");
+        return false;
+    }
     char* buffer = (char*)flb_malloc(payloadStr.length() + 1);
     if (buffer == NULL) {
         PLUGIN_ERROR("Failed in flb_malloc");
@@ -438,7 +447,7 @@ bool BugreportHandler::sendResponse(Message& request, const string& responsePayl
 {
     try {
         request.respond(responsePayload.c_str());
-    } catch(exception& e) {
+    } catch(LS::Error& e) {
         PLUGIN_ERROR("Failed to respond: %s", e.what());
         return false;
     }
@@ -551,7 +560,6 @@ ErrCode BugreportHandler::createTicket(const string& summary, const string& desc
     }
     char buff[1024];
     while (fgets(buff, sizeof(buff), fp)) {
-        buff[strlen(buff)-1] = '\0';
         PLUGIN_INFO("> %s", buff);
         if (strncmp(buff, TicketCreated, strlen(TicketCreated)))
             continue;

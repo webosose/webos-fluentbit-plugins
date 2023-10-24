@@ -166,7 +166,6 @@ int JiraHandler::onInit(struct flb_output_instance *ins, struct flb_config *conf
     } else {
         char buff[1024];
         while (fgets(buff, 1024, fp)) {
-            buff[strlen(buff)-1] = '\0';
             PLUGIN_INFO("%s", buff);
         }
         pclose(fp);
@@ -230,7 +229,7 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
         return;
     }
 
-    bool isCrashReport = (string::npos != string(tag, tag_len).find("crash")); // crashd crashinfo
+    bool isCrashReport = (tag_len > 0) && (string::npos != string(tag, tag_len).find("crash")); // crashd crashinfo
 
     msgpack_unpacked_init(&message);
     while (msgpack_unpack_next(&message, (const char*)data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
@@ -392,10 +391,12 @@ int JiraHandler::initOpkgChecksum()
 
     fp = fopen(PATH_OPKG_CHECKSUM, "r");
     if (fp != NULL) {
-        fgets(checksum_result, STR_LEN, fp);
-        m_officialChecksum = checksum_result;
-        fclose(fp);
-        return 0;
+        if (fgets(checksum_result, STR_LEN, fp)) {
+            m_officialChecksum = checksum_result;
+            (void)fclose(fp);
+            return 0;
+        }
+        (void)fclose(fp);
     }
 
     fp = popen("opkg info | md5sum | awk \'{print $1}\'", "r");
@@ -411,7 +412,6 @@ int JiraHandler::initOpkgChecksum()
     }
     pclose(fp);
 
-    checksum_result[strlen(checksum_result)-1] = '\0';
     m_officialChecksum = checksum_result;
 
     fp = fopen(PATH_OPKG_CHECKSUM, "w");
@@ -420,9 +420,11 @@ int JiraHandler::initOpkgChecksum()
         return -1;
     }
 
-    fputs(checksum_result, fp);
+    if (fputs(checksum_result, fp) == EOF) {
+        PLUGIN_WARN("Failed fputs");
+    }
 
-    fclose(fp);
+    (void)fclose(fp);
 
     PLUGIN_INFO("Create opkg checksum file : (%s)", PATH_OPKG_CHECKSUM);
     return 0;
@@ -446,8 +448,6 @@ int JiraHandler::checkOpkgChecksum()
         return -1;
     }
     pclose(fp);
-
-    checksum_result[strlen(checksum_result)-1] = '\0';
 
     PLUGIN_INFO("Default checksum (%s), now (%s)", m_officialChecksum.c_str(), checksum_result);
 

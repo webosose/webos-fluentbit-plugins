@@ -139,6 +139,10 @@ bool File::listFiles(const string& path, list<string>& files)
 
 string File::join(const string& a, const string& b)
 {
+    if (a.empty() || b.empty()) {
+        return "";
+    }
+
     string path = "";
 
     if (a.back() == '/') {
