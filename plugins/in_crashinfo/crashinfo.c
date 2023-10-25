@@ -39,9 +39,11 @@ static int crashinfo_collect(struct flb_input_instance *ins, struct flb_config *
     return collectInCrashinfo(ins, config, context);
 }
 
+char name[] = "crashinfo";
+char description[] = "crashinfo.in";
 struct flb_input_plugin in_crashinfo_plugin = {
-    .name         = "crashinfo",
-    .description  = "crashinfo.in",
+    .name         = name,
+    .description  = description,
     .cb_init      = crashinfo_init,
     .cb_pre_run   = NULL,
     .cb_collect   = crashinfo_collect,

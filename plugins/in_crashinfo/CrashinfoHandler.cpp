@@ -128,9 +128,9 @@ int InCrashinfoHandler::onInit(struct flb_input_instance *ins, struct flb_config
     // Set the monitoring path for coredump file
     pval = flb_input_get_property("path", ins);
     if (pval)
-        ctx->path = (char *)pval;
+        ctx->path = pval;
     else
-        ctx->path = (char *)PATH_COREDUMP_DIRECTORY;
+        ctx->path = PATH_COREDUMP_DIRECTORY;
     PLUGIN_INFO("Monitoring coredump file path : %s", ctx->path);
 
     pval = flb_input_get_property(PROPS_WORK_DIR, ins);
@@ -219,13 +219,14 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
     string pid;
 
     ctx->buf_start = 0;
-    ctx->buf_len = read(ctx->fd, ctx->buf, sizeof(ctx->buf) - 1);
-    if (ctx->buf_len <= 0) {
+    ssize_t nRead = read(ctx->fd, ctx->buf, sizeof(ctx->buf) - 1);
+    if (nRead <= 0) {
         PLUGIN_ERROR("Failed to read data");
         flb_input_collector_pause(ctx->coll_fd, ctx->ins);
         flb_engine_exit(config);
         return -1;
     }
+    ctx->buf_len = nRead;
     ctx->buf[ctx->buf_len] = '\0';
 
     PLUGIN_INFO("Catch the new coredump event");
@@ -273,7 +274,7 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
         for (string& crashEntry : crashEntries) {
             crashEntry = File::join(m_workDir, crashEntry);
         }
-        if (crashEntries.size() >= m_maxEntries) {
+        if (m_maxEntries > 0 && crashEntries.size() >= m_maxEntries) {
             crashEntries.sort(File::compareWithCtime);
             for (const string& crashEntry : crashEntries) {
                 struct stat attr;
@@ -420,7 +421,7 @@ void InCrashinfoHandler::initDistroInfo()
 
 int InCrashinfoHandler::verifyCoredumpFile(const char *corefile)
 {
-    int len = strlen(corefile);
+    size_t len = strlen(corefile);
 
     if (strncmp(corefile, "core", 4) != 0)
         return -1;
@@ -436,7 +437,8 @@ int InCrashinfoHandler::parseCoredumpComm(const string& coredump, string& comm, 
     // template : core | comm | uid | boot id | pid | timestamp
     // example  : core.coreexam.0.5999de4a29fb442eb75fb52f8eb64d20.1476.1615253999000000.xz
 
-    ssize_t buflen, keylen, vallen;
+    ssize_t buflen, vallen;
+    size_t keylen;
     char exe_str[STR_LEN];
     char *buf, *key, *val;
 
@@ -480,7 +482,7 @@ int InCrashinfoHandler::parseCoredumpComm(const string& coredump, string& comm, 
         // Determine length of the value
         vallen = getxattr(coredump.c_str(), key, NULL, 0);
 
-        if (vallen == -1) {
+        if (vallen < 0) {
             PLUGIN_ERROR("Failed getxattr");
         } else if (vallen == 0) {
             PLUGIN_ERROR("No value");

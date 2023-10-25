@@ -55,10 +55,14 @@ void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, const JVal
     if (!value.isObject()) {
         return;
     }
-    if (!key.empty()) {
-        packStr(packer, key);
+    if (value.objectSize() < 0) {
+        return;
+    } else {
+        if (!key.empty()) {
+            packStr(packer, key);
+        }
+        msgpack_pack_map(packer, (size_t)value.objectSize());
     }
-    msgpack_pack_map(packer, (size_t)value.objectSize());
 
     string numberStr;
     for (auto& kv : value.children()) {
@@ -77,15 +81,19 @@ void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, const JVal
             putValue(packer, kv.first.asString(), kv.second);
             break;
         case JV_ARRAY:
-            packStr(packer, kv.first.asString());
-            msgpack_pack_array(packer, kv.second.arraySize());
-            for (uint32_t i = 0; i < kv.second.arraySize(); ++i) {
-                // TODO Support other type's array. Now support only string array.
-                if (kv.second[i].getType() != JV_STR) {
-                    packStr(packer, "Not implemented");
-                    continue;
+            if (kv.second.arraySize() < 0) {
+                break;
+            } else {
+                packStr(packer, kv.first.asString());
+                msgpack_pack_array(packer, kv.second.arraySize());
+                for (uint32_t i = 0; i < kv.second.arraySize(); ++i) {
+                    // TODO Support other type's array. Now support only string array.
+                    if (kv.second[i].getType() != JV_STR) {
+                        packStr(packer, "Not implemented");
+                        continue;
+                    }
+                    packStr(packer, kv.second[i].asString());
                 }
-                packStr(packer, kv.second[i].asString());
             }
             break;
         case JV_NULL:

@@ -34,13 +34,13 @@ using namespace std;
 struct flb_in_coredump_config {
     int fd;                // coredump file descriptor
     int coll_fd;           // collector fd
-    int buf_len;           // read buffer length
-    int buf_start;         // read buffer length
+    size_t buf_len;           // read buffer length
+    size_t buf_start;         // read buffer length
     char buf[BUF_LEN];     // read buffer: 16Kb max
 
     // watch descriptor
     int wd;
-    char *path;
+    const char *path;
 
     // Parser / Format
     struct flb_pack_state pack_state;

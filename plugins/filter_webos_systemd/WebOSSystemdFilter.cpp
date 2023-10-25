@@ -271,6 +271,9 @@ void WebOSSystemdFilter::processPendings(msgpack_unpacked* result, msgpack_packe
                 ts.tm = item.first.tm;
                 PLUGIN_INFO("(%03d) [%s] %10lld.%03ld", idx, Time::toISO8601(&ts.tm).c_str(), ts.tm.tv_sec, ts.tm.tv_nsec/(1000*1000));
             }
+            if (item.second.objectSize() < 0) {
+                continue;
+            }
             (void)packCommonMsg(result, &ts, packer, 2 + item.second.objectSize());
             for (JValue::KeyValue kv : item.second.children()) {
                 if (kv.second.isString()) {
