@@ -33,7 +33,14 @@ bool operator <(const timespec& lhs, const timespec& rhs)
 
 timespec operator -(const timespec& lhs, const timespec& rhs)
 {
-    timespec result;
+    timespec result = {0, 0};
+    if (lhs.tv_nsec < 0) {
+        cerr << __FILE__ << ":" << __LINE__ << ":lhs.tv_nsec = " << lhs.tv_nsec << endl;
+        return result;
+    } else if (rhs.tv_nsec < 0) {
+        cerr << __FILE__ << ":" << __LINE__ << ":rhs.tv_nsec = " << rhs.tv_nsec << endl;
+        return result;
+    }
     if ((lhs.tv_nsec - rhs.tv_nsec) < 0) {
         result.tv_sec = lhs.tv_sec - rhs.tv_sec - 1;
         result.tv_nsec = lhs.tv_nsec - rhs.tv_nsec + 1000000000;
@@ -46,7 +53,14 @@ timespec operator -(const timespec& lhs, const timespec& rhs)
 
 timespec operator +(const timespec& lhs, const timespec& rhs)
 {
-    timespec result;
+    timespec result = {0, 0};
+    if (lhs.tv_nsec > 1000000000) {
+        cerr << __FILE__ << ":" << __LINE__ << ":lhs.tv_nsec = " << lhs.tv_nsec << endl;
+        return result;
+    } else if (rhs.tv_nsec > 1000000000) {
+        cerr << __FILE__ << ":" << __LINE__ << ":rhs.tv_nsec = " << rhs.tv_nsec << endl;
+        return result;
+    }
     if ((lhs.tv_nsec + rhs.tv_nsec) >= 1000000000) {
         result.tv_sec = lhs.tv_sec + rhs.tv_sec + 1;
         result.tv_nsec = lhs.tv_nsec + rhs.tv_nsec - 1000000000;
@@ -77,7 +91,10 @@ std::string Time::getCurrentTime(const char* format)
     }
 
     std::string timeStr(30, '\0');
-    std::strftime(&timeStr[0], timeStr.size(), format, tm);
+    size_t size = 0;
+    if ((size = std::strftime(&timeStr[0], timeStr.size(), format, tm)) == 0) {
+        return "";
+    }
 
     std::string timeString;
     for (auto it = timeStr.begin(); it != timeStr.end(); ++it) {
@@ -102,7 +119,16 @@ string Time::toISO8601(struct timespec* ts)
     if (!gmtime_r(&ts->tv_sec, &tm)) {
         return "";
     }
-    size_t size = strftime(buff, sizeof(buff), "%Y-%m-%dT%H:%M:%S", &tm);
-    snprintf(buff+size, BUFSIZE-size, ".%03ldZ", ts->tv_nsec/(1000*1000));
+    size_t size = 0;
+    if ((size = strftime(buff, sizeof(buff), "%Y-%m-%dT%H:%M:%S", &tm)) == 0) {  // size should be 20 including '\0'
+        return "";
+    }
+    if (BUFSIZE <= size) {
+        return "";
+    }
+    int n = snprintf(buff+size, BUFSIZE-size, ".%03ldZ", ts->tv_nsec/(1000*1000));
+    if (n < 0 || n >= BUFSIZE-size) {
+        return "";
+    }
     return buff;
 }

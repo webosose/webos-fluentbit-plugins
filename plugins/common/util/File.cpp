@@ -28,9 +28,8 @@ string File::readFile(const string& file_name)
     string file_contents;
 
     if (file.is_open() && file.good()) {
-        stringstream buf;
-        buf << file.rdbuf();
-        file_contents = buf.str();
+        istreambuf_iterator<char> begin(file), end;
+        file_contents = string(begin, end);
     }
 
     return file_contents;
@@ -106,17 +105,18 @@ bool File::createFile(const string& path)
     return File::writeFile(path, "");
 }
 
-
-bool File::createDir(const string& path)
+// createDir(const string& path) version may hide errno during path.c_str().
+bool File::createDir(const char* path)
 {
-    return (0 == g_mkdir_with_parents(path.c_str(), 0770));
+    return (0 == g_mkdir_with_parents(path, 0770));
 }
 
 bool File::removeDir(const string& path)
 {
-    std::string command = "rm -rf " + path;
-    int rc = ::system(command.c_str());
-    return WIFEXITED(rc) && WEXITSTATUS(rc) == 0;
+    string command = "rm -rf " + path;
+    int rc;
+    string errmsg;
+    return system(command, &rc, errmsg) && WIFEXITED(rc) && WEXITSTATUS(rc) == 0;
 }
 
 bool File::listFiles(const string& path, list<string>& files)
@@ -159,6 +159,58 @@ string File::join(const string& a, const string& b)
         }
     }
     return path;
+}
+
+bool File::popen(const string& command, string& out, string& err, int* exitStatus, string& error)
+{
+    gchar* g_out = NULL;
+    gchar* g_err = NULL;
+    gint g_exitStatus;
+    GError* g_error = NULL;
+    if (!g_spawn_command_line_sync(command.c_str(), &g_out, &g_err, &g_exitStatus, &g_error)) {
+        if (g_error && g_error->message) {
+            error = g_error->message;
+            g_error_free(g_error);
+        } else {
+            error = "";
+        }
+        return false;
+    }
+    if (exitStatus) {
+        *exitStatus = g_exitStatus;
+    }
+    if (g_out) {
+        out = g_out;
+        g_free(g_out);
+    } else {
+        out = "";
+    }
+    if (g_err) {
+        err = g_err;
+        g_free(g_err);
+    } else {
+        err = "";
+    }
+    return true;
+}
+
+bool File::system(const string& command, int* exitStatus, string& error)
+{
+    gint g_exitStatus;
+    GError* g_error = NULL;
+    if (!g_spawn_command_line_sync(command.c_str(), NULL, NULL, &g_exitStatus, &g_error)) {
+        if (g_error && g_error->message) {
+            error = g_error->message;
+            g_error_free(g_error);
+        } else {
+            error = "";
+        }
+        return false;
+    }
+    if (exitStatus) {
+        *exitStatus = g_exitStatus;
+    }
+    return true;
 }
 
 File::File()

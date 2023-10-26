@@ -138,7 +138,7 @@ int InCrashinfoHandler::onInit(struct flb_input_instance *ins, struct flb_config
         m_workDir = pval;
     }
     PLUGIN_INFO("Work_Dir : %s", m_workDir.c_str());
-    if (!File::createDir(m_workDir)) {
+    if (!File::createDir(m_workDir.c_str())) {
         PLUGIN_ERROR("Failed to create Dir: %s", m_workDir.c_str());
     }
 
@@ -278,11 +278,14 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
             crashEntries.sort(File::compareWithCtime);
             for (const string& crashEntry : crashEntries) {
                 struct stat attr;
-                if (stat(crashEntry.c_str(), &attr) == -1) {
-                    PLUGIN_WARN("Failed to stat %s: %s", crashEntry.c_str(), strerror(errno));
+                const char* crashEntry_c = crashEntry.c_str();
+                errno = 0;
+                if (stat(crashEntry_c, &attr) == -1) {
+                    char* errmsg = strerror(errno);
+                    PLUGIN_WARN("Failed to stat %s: %s", crashEntry_c, errmsg);
                     continue;
                 }
-                PLUGIN_INFO("ctime: (%ld), m_time: (%ld), entry: (%s)", attr.st_ctime, attr.st_mtime, crashEntry.c_str());
+                PLUGIN_INFO("ctime: (%ld), m_time: (%ld), entry: (%s)", attr.st_ctime, attr.st_mtime, crashEntry_c);
             }
             for (size_t i = crashEntries.size(); i >= m_maxEntries; i--) {
                 const string& outdated = crashEntries.front();
@@ -302,8 +305,11 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
         // }
         // string commPid = splitted[1] + "." + splitted[4]; // splitted[1]: comm, splitted[4]: pid
         string crashdir = File::join(m_workDir, comm + "." + pid);
-        if (!File::createDir(crashdir)) {
-            PLUGIN_ERROR("Failed to create dir: %s: %s", crashdir.c_str(), strerror(errno));
+        const char* tmp = crashdir.c_str();
+        errno = 0;
+        if (!File::createDir(tmp)) {
+            tmp = strerror(errno);
+            PLUGIN_ERROR("Failed to create dir: %s: %s", crashdir.c_str(), tmp);
             continue;
         }
 
@@ -334,18 +340,30 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
             string tmpCrashreport = File::join("/tmp", crashreportFilename);
             ifstream infile(tmpCrashreport.c_str());
             ofstream outfile(File::join(crashdir, crashreportFilename).c_str());
-            outfile << infile.rdbuf();
+            auto rdbuf = infile.rdbuf();
+            errno = 0;
+            outfile << rdbuf;
             if (outfile) {
                 (void) unlink(tmpCrashreport.c_str());
             } else {
-                PLUGIN_ERROR("Failed to copy crashreport: %s", strerror(errno));
+                int ec = errno;
+                PLUGIN_ERROR("Failed to copy crashreport: %s", strerror(ec));
                 continue;
             }
         }
         PLUGIN_INFO("command : %s", command.c_str());
-        int rc = system(command.c_str());
-        if (rc == -1) {
-            PLUGIN_ERROR("Failed to fork: %s: %s", command.c_str(), strerror(errno));
+        // int rc = system(command.c_str());
+        // if (rc == -1) {
+        //     PLUGIN_ERROR("Failed to fork: %s: %s", command.c_str(), strerror(errno));
+        //     continue;
+        // } else if (WEXITSTATUS(rc)) {
+        //     PLUGIN_ERROR("Failed to capture screenshot. (%d)", WEXITSTATUS(rc));
+        //     continue;
+        // }
+        int rc;
+        string errmsg;
+        if (!File::system(command, &rc, errmsg)) {
+            PLUGIN_ERROR("Failed to webos_capture.py : %s", errmsg.c_str());
             continue;
         } else if (WEXITSTATUS(rc)) {
             PLUGIN_ERROR("Failed to capture screenshot. (%d)", WEXITSTATUS(rc));
@@ -423,6 +441,9 @@ int InCrashinfoHandler::verifyCoredumpFile(const char *corefile)
 {
     size_t len = strlen(corefile);
 
+    if (SIZE_MAX - len < 4)
+        return -1;
+
     if (strncmp(corefile, "core", 4) != 0)
         return -1;
 
@@ -487,7 +508,8 @@ int InCrashinfoHandler::parseCoredumpComm(const string& coredump, string& comm, 
         } else if (vallen == 0) {
             PLUGIN_ERROR("No value");
         } else {
-            val = (char*)malloc(vallen + 1);
+            size_t vallen_u = (size_t)vallen;
+            val = (char*)malloc(vallen_u + 1);
             if (val == NULL) {
                 PLUGIN_ERROR("Failed malloc");
                 free(buf);
@@ -495,12 +517,13 @@ int InCrashinfoHandler::parseCoredumpComm(const string& coredump, string& comm, 
             }
 
             // Copy value to buffer
-            vallen = getxattr(coredump.c_str(), key, val, vallen);
-            if (vallen == -1) {
+            vallen = getxattr(coredump.c_str(), key, val, vallen_u);
+            if (vallen < 0) {
                 PLUGIN_ERROR("Failed getxattr");
             } else {
                 // Check attribute value (exe, pid)
-                val[vallen] = 0;
+                vallen_u = (size_t)vallen;
+                val[vallen_u] = 0;
                 PLUGIN_DEBUG("val : (%s)", val);
 
                 if (strstr(key, "pid") != NULL)
@@ -551,9 +574,11 @@ bool InCrashinfoHandler::getCrashedFunction(const string& crashreport, const str
     //   #5  0x00000000f7544bd2 _int_free (libc.so.6 + 0x56bd2)
     //   #6  0x0000000000508b6e _Z5funcCv (coredump_example + 0xb6e)
 
+    errno = 0;
     std::ifstream contents(crashreport);
+    int ec = errno;
     if (!contents) {
-        PLUGIN_ERROR("File open error %s (%d)", crashreport.c_str(), errno);
+        PLUGIN_ERROR("File open error %s (%d)", crashreport.c_str(), ec);
         return false;
     }
     string line;

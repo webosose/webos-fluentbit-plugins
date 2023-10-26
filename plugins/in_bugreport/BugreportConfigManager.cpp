@@ -57,23 +57,33 @@ JValue BugreportConfigManager::getConfig()
     // so run py script again.
     string command = "webos_issue.py --show-id";
     PLUGIN_DEBUG("command : %s", command.c_str());
-    FILE *fp = popen(command.c_str(), "r");
-    if (fp == NULL) {
-        PLUGIN_ERROR("Failed to popen : %s", command.c_str());
+    string stdout, stderr, errmsg;
+    if (!File::popen(command, stdout, stderr, NULL, errmsg)) {
+        PLUGIN_ERROR("Failed to webos_issue.py : %s", errmsg.c_str());
+        return m_config.duplicate();
+    }
+    if (!stderr.empty()) {
+        PLUGIN_WARN(" ! %s", stderr.c_str());
+    }
+    gchar** lines = g_strsplit(stdout.c_str(), "\n", 2);
+    guint len = g_strv_length(lines);
+    if (len < 2) {
+        PLUGIN_WARN(" > %s", stdout.c_str());
+        g_strfreev(lines);
         return m_config.duplicate();
     }
     char username[64];
     char password[64];
-    if (fscanf(fp, "ID : %63s\n", username) != 1)
+    if (sscanf(lines[0], "ID : %63s\n", username) != 1)
         PLUGIN_WARN("Failed to read ID");
-    if (fscanf(fp, "PW : %63s\n", password) != 1)
+    if (sscanf(lines[1], "PW : %63s\n", password) != 1)
         PLUGIN_WARN("Failed to read PW");
+    g_strfreev(lines);
     PLUGIN_DEBUG("id (%s), pw (%s)", username, password);
     JValue account = Object();
     account.put("username", username);
     account.put("password", password);
     m_config.put("account", account);
-    pclose(fp);
     return m_config.duplicate();
 }
 
@@ -96,9 +106,10 @@ ErrCode BugreportConfigManager::setAccount(JValue& account)
     // TODO check if username/password can login to jira
     string command = "webos_issue.py --id '" + username + "' --pw '" + b64encodedPassword + "'";
     PLUGIN_DEBUG("command : %s", command.c_str());
-    int ret = system(command.c_str());
-    if (ret == -1) {
-        PLUGIN_ERROR("Failed to fork : %s", strerror(errno));
+    string errmsg;
+    int ret;
+    if (!File::system(command, &ret, errmsg)) {
+        PLUGIN_ERROR("Failed to webos_issue.py : %s", errmsg.c_str());
         return ErrCode_INTERNAL_ERROR;
     }
     if (!WIFEXITED(ret) || WEXITSTATUS(ret) != 0) {

@@ -24,6 +24,7 @@
 #include "util/LinuxUtil.h"
 #include "util/Logger.h"
 #include "util/MSGPackUtil.h"
+#include "util/StringUtil.h"
 #include "util/Time.h"
 
 #define EPOCHTIME_20220101      1640995200
@@ -74,8 +75,10 @@ int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_
     if (!m_isRespawned) {
         File::createFile(PATH_RESPAWNED);
     } else {
+        errno = 0;
         if (-1 == clock_gettime(CLOCK_REALTIME, &m_respawnedTime)) {
-            PLUGIN_ERROR("Failed to clock_gettime : %s", strerror(errno));
+            int ec = errno;
+            PLUGIN_ERROR("Failed to clock_gettime : %s", strerror(ec));
             m_respawnedTime = { 0, 0 };
         }
         PLUGIN_INFO("Respawned Timestamp(%ld.%03ld)", m_respawnedTime.tv_sec, m_respawnedTime.tv_nsec/(1000*1000));
@@ -83,29 +86,55 @@ int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_
 
     // Get device info
     string deviceId, deviceName, webosName, webosBuildId;
-    gchar *output;
-    GError *error = NULL;
-    if (!g_spawn_command_line_sync("nyx-cmd DeviceInfo query wired_addr device_name", &output, NULL, NULL, &error)) {
-        PLUGIN_ERROR("nyx-cmd error: %s", error->message);
-        g_error_free(error);
+    string command = "nyx-cmd DeviceInfo query wired_addr device_name";
+    PLUGIN_INFO("%s", command.c_str());
+    string stdout, stderr, errmsg;
+    int exitStatus;
+    gchar** lines = NULL;
+    if (!File::popen(command, stdout, stderr, &exitStatus, errmsg)) {
+        PLUGIN_ERROR("nyx-cmd error: %s", errmsg.c_str());
         return -1;
     }
-    std::istringstream outStream(output);
-    (void)std::getline(outStream, deviceId, '\n');
-    (void)std::getline(outStream, deviceName, '\n');
-    g_free(output);
-    if (!g_spawn_command_line_sync("nyx-cmd OSInfo query webos_name webos_build_id", &output, NULL, NULL, &error)) {
-        PLUGIN_ERROR("nyx-cmd error: %s", error->message);
-        g_error_free(error);
+    if (!stderr.empty()) {
+        PLUGIN_INFO(" ! %s", stderr.c_str());
+    }
+    if (!stdout.empty()) {
+        lines = g_strsplit(stdout.c_str(), "\n", 2);
+        guint len = g_strv_length(lines);
+        if (len >= 2) {
+            deviceId = StringUtil::trim(lines[0]);
+            deviceName = StringUtil::trim(lines[1]);
+        } else {
+            PLUGIN_INFO(" > %s", stdout.c_str());
+        }
+        g_strfreev(lines);
+    }
+
+    command = "nyx-cmd OSInfo query webos_name webos_build_id";
+    PLUGIN_INFO("%s", command.c_str());
+    lines = NULL;
+    if (!File::popen(command, stdout, stderr, &exitStatus, errmsg)) {
+        PLUGIN_ERROR("nyx-cmd error: %s", errmsg.c_str());
         return -1;
     }
-    outStream.str(output);
-    (void)std::getline(outStream, webosName, '\n');
-    (void)std::getline(outStream, webosBuildId, '\n');
-    g_free(output);
+    if (!stderr.empty()) {
+        PLUGIN_INFO(" ! %s", stderr.c_str());
+    }
+    if (!stdout.empty()) {
+        lines = g_strsplit(stdout.c_str(), "\n", 2);
+        guint len = g_strv_length(lines);
+        if (len >= 2) {
+            webosName = StringUtil::trim(lines[0]);
+            webosBuildId = StringUtil::trim(lines[1]);
+        } else {
+            PLUGIN_INFO(" > %s", stdout.c_str());
+        }
+        g_strfreev(lines);
+    }
+
     if (deviceId.empty() || deviceName.empty() || webosName.empty() || webosBuildId.empty()) {
         PLUGIN_ERROR("At least one of deviceId, deviceName, webosName, webosBuildId is empty");
-        g_error_free(error);
+        // g_error_free(error);
         return -1;
     }
     m_deviceInfo.put("deviceId", deviceId);
@@ -117,11 +146,17 @@ int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_
     PLUGIN_INFO("webosName : %s", webosName.c_str());
     PLUGIN_INFO("webosBuildId : %s", webosBuildId.c_str());
 
-    if (-1 == clock_gettime(CLOCK_MONOTONIC, &m_monotimeBeforeSync))
-        PLUGIN_ERROR("Failed to clock_gettime (MONOTIME) : %s", strerror(errno));
+    errno = 0;
+    if (-1 == clock_gettime(CLOCK_MONOTONIC, &m_monotimeBeforeSync)) {
+        int ec = errno;
+        PLUGIN_ERROR("Failed to clock_gettime (MONOTIME) : %s", strerror(ec));
+    }
     PLUGIN_INFO("MonotimeBeforeSync : %10lld.%09ld", m_monotimeBeforeSync.tv_sec, m_monotimeBeforeSync.tv_nsec);
-    if (-1 == clock_gettime(CLOCK_REALTIME, &m_realtimeBeforeSync))
-        PLUGIN_ERROR("Failed to clock_gettime (REALTIME) : %s", strerror(errno));
+    errno = 0;
+    if (-1 == clock_gettime(CLOCK_REALTIME, &m_realtimeBeforeSync)) {
+        int ec = errno;
+        PLUGIN_ERROR("Failed to clock_gettime (REALTIME) : %s", strerror(ec));
+    }
     PLUGIN_INFO("RealtimeBeforeSync : %10lld.%09ld", m_realtimeBeforeSync.tv_sec, m_realtimeBeforeSync.tv_nsec);
 
     m_syslogIdentifier2handler["LunaSysService"] = std::bind(&WebOSSystemdFilter::handlePowerOn, this, std::placeholders::_1, std::placeholders::_2);
@@ -226,12 +261,16 @@ void WebOSSystemdFilter::processPendings(msgpack_unpacked* result, msgpack_packe
     struct timespec realtimeDiff;
     struct timespec monotimeDiff;
 
+    errno = 0;
     if (-1 == clock_gettime(CLOCK_REALTIME, &realtimeAfterSync)) {
-        PLUGIN_ERROR("Failed to clock_gettime (REALTIME) : %s", strerror(errno));
+        int ec = errno;
+        PLUGIN_ERROR("Failed to clock_gettime (REALTIME) : %s", strerror(ec));
         return;
     }
+    errno = 0;
     if (-1 == clock_gettime(CLOCK_MONOTONIC, &monotimeAfterSync)) {
-        PLUGIN_ERROR("Failed to clock_gettime (MONOTIME) : %s", strerror(errno));
+        int ec = errno;
+        PLUGIN_ERROR("Failed to clock_gettime (MONOTIME) : %s", strerror(ec));
         return;
     }
     PLUGIN_INFO("MonotimeBeforeSync : %10lld.%09ld", m_monotimeBeforeSync.tv_sec, m_monotimeBeforeSync.tv_nsec);
@@ -262,19 +301,21 @@ void WebOSSystemdFilter::processPendings(msgpack_unpacked* result, msgpack_packe
     if (m_pendings.size() > 0) {
         PLUGIN_INFO("Process pendings..");
         flb_time ts;
-        for (int idx = 0; !m_pendings.empty(); idx++) {
+        for (; !m_pendings.empty();) {
             pair<flb_time, JValue>& item = m_pendings.front();
             if (m_minPrevRealtime < item.first.tm && item.first.tm < m_maxPrevRealtime) {
                 ts.tm = item.first.tm + m_realtimeDiff - m_monotimeDiff;
-                PLUGIN_INFO("(%03d) [%s] %10lld.%03ld <= %10lld.%03ld", idx, Time::toISO8601(&ts.tm).c_str(), ts.tm.tv_sec, ts.tm.tv_nsec/(1000*1000), item.first.tm.tv_sec, item.first.tm.tv_nsec/(1000*1000));
+                PLUGIN_INFO("(%03zu) [%s] %10lld.%03ld <= %10lld.%03ld", m_pendings.size(), Time::toISO8601(&ts.tm).c_str(), ts.tm.tv_sec, ts.tm.tv_nsec/(1000*1000), item.first.tm.tv_sec, item.first.tm.tv_nsec/(1000*1000));
             } else {
                 ts.tm = item.first.tm;
-                PLUGIN_INFO("(%03d) [%s] %10lld.%03ld", idx, Time::toISO8601(&ts.tm).c_str(), ts.tm.tv_sec, ts.tm.tv_nsec/(1000*1000));
+                PLUGIN_INFO("(%03zu) [%s] %10lld.%03ld", m_pendings.size(), Time::toISO8601(&ts.tm).c_str(), ts.tm.tv_sec, ts.tm.tv_nsec/(1000*1000));
             }
-            if (item.second.objectSize() < 0) {
+            ssize_t objectSize_s = item.second.objectSize();
+            if (objectSize_s < 0) {
                 continue;
             }
-            (void)packCommonMsg(result, &ts, packer, 2 + item.second.objectSize());
+            size_t objectSize = (size_t)objectSize_s;
+            (void)packCommonMsg(result, &ts, packer, 2 + objectSize);
             for (JValue::KeyValue kv : item.second.children()) {
                 if (kv.second.isString()) {
                     const string& k = kv.first.asString();

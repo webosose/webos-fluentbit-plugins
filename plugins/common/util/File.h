@@ -47,17 +47,14 @@ public:
     static bool isDirectory(const string& path);
     static bool isFile(const string& path);
     static bool createFile(const string& path);
-    static bool createDir(const string& path);
+    static bool createDir(const char* path);
     static bool removeDir(const string& path);
     static bool listFiles(const string& path, list<string>& files);
 
     static string join(const string& a, const string& b);
 
-    static void trimPath(string& path)
-    {
-        if (path.back() == '/')
-            path.erase(prev(path.end()));
-    }
+    static bool popen(const string& command, string& out, string& err, int* exitStatus, string& error);
+    static bool system(const string& command, int* exitStatus, string& error);
 
     File();
     virtual ~File();

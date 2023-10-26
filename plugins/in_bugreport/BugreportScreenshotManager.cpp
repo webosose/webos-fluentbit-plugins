@@ -64,6 +64,7 @@ string BugreportScreenshotManager::captureCompositorOutput()
     while (access(filepath.c_str(), F_OK) == 0) {
         filename = prefix + "_" + to_string(index++) + suffix;
         filepath = File::join(DIR_SCREENSHOTS, filename);
+        if (index == UINT_MAX) break;  // for CERT INT30-C
     }
     JValue requestPayload = Object();
     requestPayload.put("output", filepath);
@@ -99,11 +100,14 @@ void BugreportScreenshotManager::removeScreenshots()
             continue;
         if (strcmp("..", dirent->d_name) == 0)
             continue;
-        string fullpath = File::join(DIR_SCREENSHOTS, dirent->d_name);
-        if (0 == unlink(fullpath.c_str())) {
-            PLUGIN_INFO("Screenshot removed : %s", fullpath.c_str());
+        string fullpath_s = File::join(DIR_SCREENSHOTS, dirent->d_name);
+        const char* fullpath = fullpath_s.c_str();
+        errno = 0;
+        if (0 == unlink(fullpath)) {
+            PLUGIN_INFO("Screenshot removed : %s", fullpath);
         } else {
-            PLUGIN_WARN("Failed to remove %s : %s", fullpath.c_str(), strerror(errno));
+            int ec = errno;
+            PLUGIN_WARN("Failed to remove %s : %s", fullpath, strerror(ec));
         }
     }
     closedir(dir);
@@ -137,7 +141,7 @@ JValue BugreportScreenshotManager::toJson() const
         return array;
     }
     for (const string& screenshot : screenshots) {
-        array.append(JValue{screenshot});
+        array.append(screenshot);
     }
     return array;
 }
