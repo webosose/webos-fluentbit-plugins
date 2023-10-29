@@ -55,14 +55,15 @@ void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, const JVal
     if (!value.isObject()) {
         return;
     }
-    if (value.objectSize() < 0) {
+    ssize_t objectSize_s = value.objectSize();
+    if (objectSize_s < 0) {
         return;
-    } else {
-        if (!key.empty()) {
-            packStr(packer, key);
-        }
-        msgpack_pack_map(packer, (size_t)value.objectSize());
     }
+    size_t objectSize = (size_t)objectSize_s;
+    if (!key.empty()) {
+        packStr(packer, key);
+    }
+    msgpack_pack_map(packer, objectSize);
 
     string numberStr;
     for (auto& kv : value.children()) {
@@ -81,11 +82,12 @@ void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, const JVal
             putValue(packer, kv.first.asString(), kv.second);
             break;
         case JV_ARRAY:
-            if (kv.second.arraySize() < 0) {
-                break;
-            } else {
+            {
+                ssize_t arraySize_s = kv.second.arraySize();
+                if (arraySize_s < 0) break;
+                size_t arraySize = (size_t)arraySize_s;
                 packStr(packer, kv.first.asString());
-                msgpack_pack_array(packer, kv.second.arraySize());
+                msgpack_pack_array(packer, arraySize);
                 for (uint32_t i = 0; i < kv.second.arraySize(); ++i) {
                     // TODO Support other type's array. Now support only string array.
                     if (kv.second[i].getType() != JV_STR) {

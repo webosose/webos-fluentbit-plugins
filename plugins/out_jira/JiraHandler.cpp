@@ -26,6 +26,7 @@
 #include "util/Logger.h"
 #include "util/MSGPackUtil.h"
 #include "util/PluginConf.h"
+#include "util/StringUtil.h"
 
 #define PATH_OPKG_CHECKSUM      "/var/luna/preferences/opkg_checksum"
 #define DEFAULT_TIME_FILE       "/lib/systemd/systemd"
@@ -160,17 +161,28 @@ int JiraHandler::onInit(struct flb_output_instance *ins, struct flb_config *conf
 
     string command = "webos_uploader.py --sync-config --log-level debug";
     PLUGIN_INFO("%s", command.c_str());
-    FILE *fp = popen(command.c_str(), "r");
-    if (fp == NULL) {
-        PLUGIN_WARN("Failed to popen : %s", command.c_str());
+    string stdout, stderr, errmsg;
+    int exitStatus;
+    if (!File::popen(command, stdout, stderr, &exitStatus, errmsg)) {
+        PLUGIN_ERROR("Failed to g_spawn_sync : %s", errmsg.c_str());
     } else {
-        char buff[1024];
-        while (fgets(buff, 1024, fp)) {
-            PLUGIN_INFO("%s", buff);
+        if (!stderr.empty()) {
+            gchar** lines = g_strsplit(stdout.c_str(), "\n", 0);
+            guint len = g_strv_length(lines);
+            for (guint i = 0; i < len; i++) {
+                PLUGIN_INFO(" ! %s", lines[i]);
+            }
+            g_strfreev(lines);
         }
-        pclose(fp);
+        if (!stdout.empty()) {
+            gchar** lines = g_strsplit(stdout.c_str(), "\n", 0);
+            guint len = g_strv_length(lines);
+            for (guint i = 0; i < len; i++) {
+                PLUGIN_INFO(" > %s", lines[i]);
+            }
+            g_strfreev(lines);
+        }
     }
-
     // Export context
     flb_output_set_context(ins, ctx);
     PLUGIN_INFO("initialize done");
@@ -302,13 +314,18 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
             continue;
         }
 
-        string pattern = "\"";
-        string replace = "\\\"";
+        const string pattern = "\"";
+        size_t patternSize = pattern.size();
+        if (patternSize > INT_MAX) {  // for CERT INT31-C
+            continue;
+        }
+        const int pattern_size = (int)patternSize;
+        const string replace = "\\\"";
         string::size_type pos = 0;
         string::size_type offset = 0;
         string escapedComment = tcsteps;
         while ((pos = escapedComment.find(pattern, offset)) != string::npos) {
-            escapedComment.replace(escapedComment.begin() + pos, escapedComment.begin() + pos + pattern.size(), replace);
+            escapedComment.replace(escapedComment.begin() + pos, escapedComment.begin() + pos + pattern_size, replace);
             offset = pos + replace.size();
         }
         if (tcsteps.empty())
@@ -327,9 +344,10 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
 
         PLUGIN_INFO("command : %s", command.c_str());
 
-        int ret = system(command.c_str());
-        if (ret == -1) {
-            PLUGIN_ERROR("Failed to fork : %s", strerror(errno));
+        int ret;
+        string errmsg;
+        if (!File::system(command, &ret, errmsg)) {
+            PLUGIN_ERROR("Failed to g_spawn_sync : %s", errmsg.c_str());
         } else if (WIFEXITED(ret) && WEXITSTATUS(ret) == 0) {
             PLUGIN_INFO("Done");
         } else {
@@ -399,32 +417,29 @@ int JiraHandler::initOpkgChecksum()
         (void)fclose(fp);
     }
 
-    fp = popen("opkg info | md5sum | awk \'{print $1}\'", "r");
-    if (fp == NULL) {
-        PLUGIN_ERROR("Failed popen");
+    // string command = "opkg info | md5sum | awk \'{print $1}\'";
+    // g_spawn_sync does not print " | awk " result well.
+    string command = "sh -c 'opkg info | md5sum'";
+    PLUGIN_INFO("%s", command.c_str());
+    string stdout, stderr, errmsg;
+    int exitStatus;
+    if (!File::popen(command, stdout, stderr, &exitStatus, errmsg)) {
+        PLUGIN_ERROR("Failed to g_spawn_sync : %s", errmsg.c_str());
+        return -1;
+    }
+    if (!stderr.empty()) {
+        PLUGIN_INFO(" ! %s", stderr.c_str());
+    }
+    if (exitStatus == 0 && !stdout.empty()) {
+        m_officialChecksum = StringUtil::trim(stdout).substr(0, 32); // md5 = 32 hexa digits
+    } else {
+        PLUGIN_ERROR("Failed to get opkg checksum");
         return -1;
     }
 
-    if (fgets(checksum_result, STR_LEN, fp) == NULL) {
-        PLUGIN_ERROR("Failed fgets");
-        pclose(fp);
-        return -1;
+    if (!File::writeFile(PATH_OPKG_CHECKSUM, m_officialChecksum)) {
+        PLUGIN_WARN("Failed to writeFile: %s", PATH_OPKG_CHECKSUM);
     }
-    pclose(fp);
-
-    m_officialChecksum = checksum_result;
-
-    fp = fopen(PATH_OPKG_CHECKSUM, "w");
-    if (fp == NULL) {
-        PLUGIN_ERROR("Failed fopen");
-        return -1;
-    }
-
-    if (fputs(checksum_result, fp) == EOF) {
-        PLUGIN_WARN("Failed fputs");
-    }
-
-    (void)fclose(fp);
 
     PLUGIN_INFO("Create opkg checksum file : (%s)", PATH_OPKG_CHECKSUM);
     return 0;
@@ -432,26 +447,31 @@ int JiraHandler::initOpkgChecksum()
 
 int JiraHandler::checkOpkgChecksum()
 {
-    FILE *fp;
-    int ret;
-    char checksum_result[STR_LEN];
+    string checksum_result;
 
-    fp = popen("opkg info | md5sum | awk \'{print $1}\'", "r");
-    if (fp == NULL) {
-        PLUGIN_ERROR("Failed popen");
+    // string command = "opkg info | md5sum | awk \'{print $1}\'";
+    // g_spawn_sync does not print " | awk " result well.
+    string command = "sh -c 'opkg info | md5sum'";
+    string stdout, stderr, errmsg;
+    int exitStatus;
+    if (!File::popen(command, stdout, stderr, &exitStatus, errmsg)) {
+        PLUGIN_ERROR("Failed to g_spawn_sync : %s", errmsg.c_str());
+        return -1;
+    }
+    if (!stderr.empty()) {
+        PLUGIN_INFO(" ! %s", stderr.c_str());
+    }
+    if (exitStatus == 0) {
+        if (!stdout.empty()) {
+            checksum_result = StringUtil::trim(stdout).substr(0, 32); // md5 = 32 hexa digits
+        }
+    } else {
         return -1;
     }
 
-    if (fgets(checksum_result, STR_LEN, fp) == NULL) {
-        PLUGIN_ERROR("Failed fgets");
-        pclose(fp);
-        return -1;
-    }
-    pclose(fp);
+    PLUGIN_INFO("Default checksum (%s), now (%s)", m_officialChecksum.c_str(), checksum_result.c_str());
 
-    PLUGIN_INFO("Default checksum (%s), now (%s)", m_officialChecksum.c_str(), checksum_result);
-
-    if (strcmp(m_officialChecksum.c_str(), checksum_result) == 0)
+    if (m_officialChecksum == checksum_result)
         return 0;
     else
         return -1;

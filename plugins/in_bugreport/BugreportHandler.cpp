@@ -31,9 +31,11 @@
 #include "Environment.h"
 #include "FluentBit.h"
 #include "util/ErrCode.h"
+#include "util/File.h"
 #include "util/JValueUtil.h"
 #include "util/Logger.h"
 #include "util/MSGPackUtil.h"
+#include "util/StringUtil.h"
 
 #define DEFAULT_QUEUE_CAPACITY  100
 #define DEFAULT_INTERVAL_SEC    1
@@ -116,8 +118,8 @@ int BugreportHandler::onInit(struct flb_input_instance *ins, struct flb_config *
         PLUGIN_ERROR("Failed in rpa_queue_create");
         return -1;
     }
-    registerCategory("/", BugreportHandler::METHOD_TABLE, NULL, NULL);
     try {
+        registerCategory("/", BugreportHandler::METHOD_TABLE, NULL, NULL);
         setCategoryData("/", this);
     } catch (LS::Error& lserror) {
         PLUGIN_ERROR("Failed to setCategoryData; %s", lserror.what());
@@ -241,13 +243,17 @@ int BugreportHandler::findKeyboardFd()
             PLUGIN_DEBUG("%s is not a vaild device.", device.c_str());
             continue;
         }
+        errno = 0;
         if (ioctl(fd, EVIOCGNAME(sizeof(name)), name) == -1) {
-            PLUGIN_DEBUG("Error in ioctl EVIOCGNAME (%d) %s", errno, strerror(errno));
+            int ec = errno;
+            PLUGIN_DEBUG("Error in ioctl EVIOCGNAME for (%d) %s", ec, strerror(ec));
             close(fd);
             continue;
         }
+        errno = 0;
         if (ioctl(fd, EVIOCGPHYS(sizeof(phys)), phys) == -1) {
-            PLUGIN_DEBUG("Error in ioctl EVIOCGPHYS (%d) %s", errno, strerror(errno));
+            int ec = errno;
+            PLUGIN_DEBUG("Error in ioctl EVIOCGPHYS for (%d) %s", ec, strerror(ec));
             close(fd);
             continue;
         }
@@ -257,8 +263,10 @@ int BugreportHandler::findKeyboardFd()
             continue;
         }
         unsigned long evbit[NBITS(EV_CNT)];
+        errno = 0;
         if (ioctl(fd, EVIOCGBIT(0, sizeof(evbit)), evbit) == -1) {
-            PLUGIN_ERROR("Error in ioctl EVIOCGBIT (%d) %s", errno, strerror(errno));
+            int ec = errno;
+            PLUGIN_ERROR("Error in ioctl EVIOCGBIT for (%d) %s", ec, strerror(ec));
             close(fd);
             continue;
         }
@@ -398,17 +406,18 @@ bool BugreportHandler::onLaunchBugreportApp(LSHandle *sh, LSMessage *message, vo
 bool BugreportHandler::pushToRpaQueue(JValue payload)
 {
     string payloadStr = payload.stringify();
-    if (UINT_MAX - payloadStr.length() < 1) {
+    size_t length = payloadStr.length();
+    if (SIZE_MAX - length < 1) {
         PLUGIN_ERROR("Wrong payload length");
         return false;
     }
-    char* buffer = (char*)flb_malloc(payloadStr.length() + 1);
+    char* buffer = (char*)flb_malloc(length + 1);
     if (buffer == NULL) {
         PLUGIN_ERROR("Failed in flb_malloc");
         return false;
     }
-    strncpy(buffer, payloadStr.c_str(), payloadStr.length());
-    buffer[payloadStr.length()] = '\0';
+    strncpy(buffer, payloadStr.c_str(), length);
+    buffer[length] = '\0';
     PLUGIN_DEBUG("PUSH %s", buffer);
     return rpa_queue_push(m_queue, (void*)buffer);
 }
@@ -447,7 +456,7 @@ bool BugreportHandler::sendResponse(Message& request, const string& responsePayl
 {
     try {
         request.respond(responsePayload.c_str());
-    } catch(LS::Error& e) {
+    } catch(exception& e) {
         PLUGIN_ERROR("Failed to respond: %s", e.what());
         return false;
     }
@@ -531,12 +540,15 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
     if (ErrCode_NONE != (errCode = createTicket(summary, description, priority, reproducibility, issuetype, screenshotStr, key))) {
         return sendResponse(request, errCode);
     }
-    for (const string& screenshotPath : screenshotPaths) {
-        if (-1 == unlink(screenshotPath.c_str())) {
-            PLUGIN_WARN("Failed to remove %s : %s", screenshotPath.c_str(), strerror(errno));
+    for (const string& screenshotPath_s : screenshotPaths) {
+        const char* screenshotPath = screenshotPath_s.c_str();
+        errno = 0;
+        if (-1 == unlink(screenshotPath)) {
+            int ec = errno;
+            PLUGIN_WARN("Failed to remove %s : %s", screenshotPath, strerror(ec));
             continue;
         }
-        PLUGIN_INFO("Removed %s", screenshotPath.c_str());
+        PLUGIN_INFO("Removed %s", screenshotPath);
     }
     JValue responsePayload = Object();
     responsePayload.put("key", key);
@@ -553,19 +565,29 @@ ErrCode BugreportHandler::createTicket(const string& summary, const string& desc
                    + (issuetype.empty() ? "" : "--issuetype \"" + issuetype + "\" ")
                    + (uploadFiles.empty() ? "" : "--upload-files " + uploadFiles);
     PLUGIN_INFO("%s", command.c_str());
-    FILE *fp = popen(command.c_str(), "r");
-    if (fp == NULL) {
-        PLUGIN_WARN("Failed to popen : %s", command.c_str());
+    string stdout, stderr, errmsg;
+    int ret;
+    gchar** lines;
+    if (!File::popen(command, stdout, stderr, &ret, errmsg)) {
+        PLUGIN_WARN("Failed to webos_issue.py : %s", errmsg.c_str());
         return ErrCode_INTERNAL_ERROR;
     }
-    char buff[1024];
-    while (fgets(buff, sizeof(buff), fp)) {
-        PLUGIN_INFO("> %s", buff);
-        if (strncmp(buff, TicketCreated, strlen(TicketCreated)))
-            continue;
-        key = buff + strlen(TicketCreated);
+    if (!stderr.empty()) {
+        PLUGIN_WARN(" ! %s", stderr.c_str());
     }
-    int ret = pclose(fp);
+    if (!stdout.empty()) {
+        lines = g_strsplit(stdout.c_str(), "\n", 0);
+        guint len = g_strv_length(lines);
+        for (guint i = 0; i < len; i++) {
+            PLUGIN_INFO(" > %s", lines[i]);
+            if (strncmp(lines[i], TicketCreated, strlen(TicketCreated)))
+                continue;
+            string tmp = lines[i] + strlen(TicketCreated);
+            key = StringUtil::trim(tmp);
+        }
+        g_strfreev(lines);
+    }
+
     if (!WIFEXITED(ret) || WEXITSTATUS(ret)) {
         PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));
         return ErrCode_INTERNAL_ERROR;

@@ -81,7 +81,7 @@ int OutCrashinfoHandler::onInit(struct flb_output_instance *ins, struct flb_conf
         m_workDir = tmp;
     }
     PLUGIN_INFO("Work_Dir : %s", m_workDir.c_str());
-    if (!File::createDir(m_workDir)) {
+    if (!File::createDir(m_workDir.c_str())) {
         PLUGIN_ERROR("Failed to create Dir: %s", m_workDir.c_str());
     }
 
@@ -176,15 +176,18 @@ void OutCrashinfoHandler::onFlush(const void *data, size_t bytes, const char *ta
         for (string& crashEntry : crashEntries) {
             crashEntry = File::join(m_workDir, crashEntry);
         }
-        if (crashEntries.size() >= m_maxEntries) {
+        if (m_maxEntries >= 1 && crashEntries.size() >= m_maxEntries) {
             crashEntries.sort(File::compareWithCtime);
             for (const string& crashEntry : crashEntries) {
+                const char* crashEntry_c = crashEntry.c_str();
                 struct stat attr;
-                if (stat(crashEntry.c_str(), &attr) == -1) {
-                    PLUGIN_WARN("Failed to stat %s: %s", crashEntry.c_str(), strerror(errno));
+                errno = 0;
+                if (stat(crashEntry_c, &attr) == -1) {
+                    const char* errmsg = strerror(errno);
+                    PLUGIN_WARN("Failed to stat %s: %s", crashEntry_c, errmsg);
                     continue;
                 }
-                PLUGIN_INFO("ctime: (%ld), m_time: (%ld), entry: (%s)", attr.st_ctime, attr.st_mtime, crashEntry.c_str());
+                PLUGIN_INFO("ctime: (%ld), m_time: (%ld), entry: (%s)", attr.st_ctime, attr.st_mtime, crashEntry_c);
             }
             for (size_t i = crashEntries.size(); i >= m_maxEntries; i--) {
                 const string& outdated = crashEntries.front();
@@ -201,9 +204,10 @@ void OutCrashinfoHandler::onFlush(const void *data, size_t bytes, const char *ta
                        + (access(coredump.c_str(), F_OK) == 0 ? coredump : "") + " "
                        + "'" + crashreport + "' " + journals + " " + messages + " " + screenshot + " " + sysinfo;
         PLUGIN_INFO("command : %s", command.c_str());
-        int rc = system(command.c_str());
-        if (rc == -1) {
-            PLUGIN_ERROR("Failed to fork : %s", strerror(errno));
+        int rc;
+        string errmsg;
+        if (!File::system(command, &rc, errmsg)) {
+            PLUGIN_ERROR("Failed to fork : %s", errmsg.c_str());
         } else if (WIFEXITED(rc) && WEXITSTATUS(rc) == 0) {
             PLUGIN_INFO("Done");
         } else {
