@@ -167,7 +167,7 @@ int JiraHandler::onInit(struct flb_output_instance *ins, struct flb_config *conf
         PLUGIN_ERROR("Failed to g_spawn_sync : %s", errmsg.c_str());
     } else {
         if (!stderr.empty()) {
-            gchar** lines = g_strsplit(stdout.c_str(), "\n", 0);
+            gchar** lines = g_strsplit(stderr.c_str(), "\n", 0);
             guint len = g_strv_length(lines);
             for (guint i = 0; i < len; i++) {
                 PLUGIN_INFO(" ! %s", lines[i]);

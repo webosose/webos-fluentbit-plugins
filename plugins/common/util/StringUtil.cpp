@@ -14,6 +14,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstdint>
 #include "StringUtil.h"
 
 string StringUtil::trim(const string& str, const char* t)
