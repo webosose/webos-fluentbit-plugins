@@ -69,6 +69,12 @@ extern "C" void flushJira(const void *data, size_t bytes, const char *tag, int t
     JiraHandler::getInstance().onFlush(data, bytes, tag, tag_len, ins, context, config);
 }
 
+JiraHandler& JiraHandler::getInstance()
+{
+    static JiraHandler s_instance;
+    return s_instance;
+}
+
 JiraHandler::JiraHandler()
     : m_outFormat(FLB_PACK_JSON_FORMAT_LINES)
     , m_jsonDateFormat(FLB_PACK_JSON_DATE_DOUBLE)
@@ -167,10 +173,11 @@ int JiraHandler::onInit(struct flb_output_instance *ins, struct flb_config *conf
         PLUGIN_ERROR("Failed to g_spawn_sync : %s", errmsg.c_str());
     } else {
         if (!stderr.empty()) {
+            stderr = StringUtil::trim(stderr);
             gchar** lines = g_strsplit(stderr.c_str(), "\n", 0);
             guint len = g_strv_length(lines);
             for (guint i = 0; i < len; i++) {
-                PLUGIN_INFO(" ! %s", lines[i]);
+                PLUGIN_INFO("! %s", lines[i]);
             }
             g_strfreev(lines);
         }
@@ -178,7 +185,7 @@ int JiraHandler::onInit(struct flb_output_instance *ins, struct flb_config *conf
             gchar** lines = g_strsplit(stdout.c_str(), "\n", 0);
             guint len = g_strv_length(lines);
             for (guint i = 0; i < len; i++) {
-                PLUGIN_INFO(" > %s", lines[i]);
+                PLUGIN_INFO("> %s", lines[i]);
             }
             g_strfreev(lines);
         }
@@ -361,29 +368,29 @@ void JiraHandler::onFlush(const void *data, size_t bytes, const char *tag, int t
 int JiraHandler::initDefaultTime()
 {
     struct stat def_stat;
-    struct tm *def_tm_mtime;
-    struct tm *def_tm_ctime;
+    struct tm def_tm_mtime;
+    struct tm def_tm_ctime;
 
     if (lstat(DEFAULT_TIME_FILE, &def_stat) == -1) {
         PLUGIN_ERROR("Failed lstat (%s)", DEFAULT_TIME_FILE);
         return -1;
     }
 
-    if (NULL == (def_tm_mtime = localtime(&def_stat.st_mtime))) {
-        PLUGIN_ERROR("Failed localtime");
+    if (NULL == localtime_r(&def_stat.st_mtime, &def_tm_mtime)) {
+        PLUGIN_ERROR("Failed localtime_r");
         return -1;
     }
-    if (NULL == (def_tm_ctime = localtime(&def_stat.st_ctime))) {
-        PLUGIN_ERROR("Failed localtime");
+    if (NULL == localtime_r(&def_stat.st_ctime, &def_tm_ctime)) {
+        PLUGIN_ERROR("Failed localtime_r");
         return -1;
     }
 
-    m_defaultTime.modify_year = def_tm_mtime->tm_year + 1900;
-    m_defaultTime.modify_mon = def_tm_mtime->tm_mon + 1;
-    m_defaultTime.modify_mday = def_tm_mtime->tm_mday;
-    m_defaultTime.change_year = def_tm_ctime->tm_year + 1900;
-    m_defaultTime.change_mon = def_tm_ctime->tm_mon + 1;
-    m_defaultTime.change_mday = def_tm_ctime->tm_mday;
+    m_defaultTime.modify_year = def_tm_mtime.tm_year + 1900;
+    m_defaultTime.modify_mon = def_tm_mtime.tm_mon + 1;
+    m_defaultTime.modify_mday = def_tm_mtime.tm_mday;
+    m_defaultTime.change_year = def_tm_ctime.tm_year + 1900;
+    m_defaultTime.change_mon = def_tm_ctime.tm_mon + 1;
+    m_defaultTime.change_mday = def_tm_ctime.tm_mday;
 
     return 0;
 }
@@ -407,14 +414,11 @@ int JiraHandler::initOpkgChecksum()
     int ret;
     char checksum_result[STR_LEN];
 
-    fp = fopen(PATH_OPKG_CHECKSUM, "r");
-    if (fp != NULL) {
-        if (fgets(checksum_result, STR_LEN, fp)) {
-            m_officialChecksum = checksum_result;
-            (void)fclose(fp);
-            return 0;
-        }
-        (void)fclose(fp);
+    string contents = File::readFile(PATH_OPKG_CHECKSUM);
+    contents = StringUtil::trim(contents);
+    if (!contents.empty()) {
+        m_officialChecksum = std::move(contents);
+        return 0;
     }
 
     // string command = "opkg info | md5sum | awk \'{print $1}\'";
@@ -428,7 +432,7 @@ int JiraHandler::initOpkgChecksum()
         return -1;
     }
     if (!stderr.empty()) {
-        PLUGIN_INFO(" ! %s", stderr.c_str());
+        PLUGIN_INFO("! %s", stderr.c_str());
     }
     if (exitStatus == 0 && !stdout.empty()) {
         m_officialChecksum = StringUtil::trim(stdout).substr(0, 32); // md5 = 32 hexa digits
@@ -459,7 +463,7 @@ int JiraHandler::checkOpkgChecksum()
         return -1;
     }
     if (!stderr.empty()) {
-        PLUGIN_INFO(" ! %s", stderr.c_str());
+        PLUGIN_INFO("! %s", stderr.c_str());
     }
     if (exitStatus == 0) {
         if (!stdout.empty()) {
@@ -483,8 +487,8 @@ int JiraHandler::checkExeTime(const string& exe)
 
     struct stat exe_stat;
 
-    struct tm *exe_tm_mtime;
-    struct tm *exe_tm_ctime;
+    struct tm exe_tm_mtime;
+    struct tm exe_tm_ctime;
 
     struct time_information exe_time;
 
@@ -493,21 +497,21 @@ int JiraHandler::checkExeTime(const string& exe)
         return -1;
     }
 
-    if (NULL == (exe_tm_mtime = localtime(&exe_stat.st_mtime))) {
-        PLUGIN_ERROR("Failed localtime");
+    if (NULL == localtime_r(&exe_stat.st_mtime, &exe_tm_mtime)) {
+        PLUGIN_ERROR("Failed localtime_r");
         return -1;
     }
-    if (NULL == (exe_tm_ctime = localtime(&exe_stat.st_ctime))) {
-        PLUGIN_ERROR("Failed localtime");
+    if (NULL == localtime_r(&exe_stat.st_ctime, &exe_tm_ctime)) {
+        PLUGIN_ERROR("Failed localtime_r");
         return -1;
     }
 
-    exe_time.modify_year = exe_tm_mtime->tm_year + 1900;
-    exe_time.modify_mon = exe_tm_mtime->tm_mon + 1;
-    exe_time.modify_mday = exe_tm_mtime->tm_mday;
-    exe_time.change_year = exe_tm_ctime->tm_year + 1900;
-    exe_time.change_mon = exe_tm_ctime->tm_mon + 1;
-    exe_time.change_mday = exe_tm_ctime->tm_mday;
+    exe_time.modify_year = exe_tm_mtime.tm_year + 1900;
+    exe_time.modify_mon = exe_tm_mtime.tm_mon + 1;
+    exe_time.modify_mday = exe_tm_mtime.tm_mday;
+    exe_time.change_year = exe_tm_ctime.tm_year + 1900;
+    exe_time.change_mon = exe_tm_ctime.tm_mon + 1;
+    exe_time.change_mday = exe_tm_ctime.tm_mday;
 
     PLUGIN_INFO("Modified time information default mtime (%d-%d-%d), exe mtime (%d-%d-%d)", \
             m_defaultTime.modify_year, m_defaultTime.modify_mon, m_defaultTime.modify_mday, \

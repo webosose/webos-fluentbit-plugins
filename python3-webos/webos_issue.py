@@ -631,7 +631,7 @@ if __name__ == "__main__":
             result = WebOSIssue.instance().create_issue(args.summary, args.description, args.priority, args.reproducibility, args.issuetype, args.unique_summary, components, labels, args.assignee)
             logging.info(result)
         except Exception as ex:
-            error_text = ex.response.status_code if ex.response and ex.response.status_code else str(ex)
+            error_text = ex.response.status_code if ex.response is not None and ex.response.status_code else str(ex)
             logging.error('Failed to create ticket : {}'.format(error_text))
             if args.enable_popup:
                 WebOSIssue.instance().show_popup('Failed to create ticket : {}'.format(error_text))

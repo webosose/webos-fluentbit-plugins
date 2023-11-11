@@ -18,6 +18,10 @@
 
 #include "util/Logger.h"
 
+extern int initOutCrashinfoHandler(struct flb_output_instance *ins, struct flb_config *config, void *data);
+extern int exitOutCrashinfoHandler(void *data, struct flb_config *config);
+extern void flushOutCrashinfo(const void *data, size_t bytes, const char *tag, int tag_len, struct flb_input_instance *ins, void *context, struct flb_config *config);
+
 static int cb_crashinfo_init(struct flb_output_instance *ins, struct flb_config *config, void *data)
 {
     setLogContext(ins->log_level, ins->p->description);
@@ -35,8 +39,8 @@ static int cb_crashinfo_exit(void *data, struct flb_config *config)
     return exitOutCrashinfoHandler(data, config);
 }
 
-char name[] = "crashinfo";
-char description[] = "crashinfo.out";
+static char name[] = "crashinfo";
+static char description[] = "crashinfo.out";
 struct flb_output_plugin out_crashinfo_plugin = {
     .name         = name,
     .description  = description,

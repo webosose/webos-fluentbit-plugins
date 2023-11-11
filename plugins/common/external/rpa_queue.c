@@ -171,7 +171,7 @@ bool rpa_queue_timedpush(rpa_queue_t *queue, void *data, int wait_ms)
     return false;
   }
 
-  if (rpa_queue_full(queue)) {
+  while (rpa_queue_full(queue)) {
     if (!queue->terminated) {
       queue->full_waiters++;
       if (wait_ms == RPA_WAIT_FOREVER) {
@@ -300,7 +300,7 @@ bool rpa_queue_timedpop(rpa_queue_t *queue, void **data, int wait_ms)
   }
 
   /* Keep waiting until we wake up and find that the queue is not empty. */
-  if (rpa_queue_empty(queue)) {
+  while (rpa_queue_empty(queue)) {
     if (!queue->terminated) {
       queue->empty_waiters++;
       if (wait_ms == RPA_WAIT_FOREVER) {

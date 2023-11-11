@@ -21,13 +21,20 @@
 
 unsigned long LunaHandle::TIMEOUT = 5000;
 
-void* LunaHandle::onThread(void *ctx)
+// for CERT EXP56-CPP
+// extern "C" typedef void *(*thread_callback_t)(void *);
+extern "C" void* thread_routine(void *ctx)
 {
     LunaHandle* self = (LunaHandle*)ctx;
-    PLUGIN_INFO("Start to handle main context");
-    g_main_loop_run(self->m_mainLoop);
-    PLUGIN_INFO("End");
+    self->onThread();
     return NULL;
+}
+
+void LunaHandle::onThread()
+{
+    PLUGIN_INFO("Start to handle main context");
+    g_main_loop_run(m_mainLoop);
+    PLUGIN_INFO("End");
 }
 
 LunaHandle::LunaHandle(const char* name)
@@ -59,7 +66,7 @@ bool LunaHandle::initialize(rpa_queue_t *queue)
         PLUGIN_ERROR("Failed in attachToLoop: %s", e.what());
         return false;
     }
-    int ret = pthread_create(&m_thread, NULL, onThread, this);
+    int ret = pthread_create(&m_thread, NULL, thread_routine, this);
     if (ret != 0) {
         PLUGIN_ERROR("Failed in pthread_create: %d", ret);
         return false;

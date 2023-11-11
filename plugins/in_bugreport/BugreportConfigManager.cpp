@@ -110,7 +110,7 @@ ErrCode BugreportConfigManager::setAccount(JValue& account)
     int ret;
     if (!File::system(command, &ret, errmsg)) {
         PLUGIN_ERROR("Failed to webos_issue.py : %s", errmsg.c_str());
-        return ErrCode_INTERNAL_ERROR;
+        return ErrCode_FORK_FAILED;
     }
     if (!WIFEXITED(ret) || WEXITSTATUS(ret) != 0) {
         PLUGIN_ERROR("Command terminated with failure : Return code (0x%x), exited (%d), exit-status (%d)", ret, WIFEXITED(ret), WEXITSTATUS(ret));

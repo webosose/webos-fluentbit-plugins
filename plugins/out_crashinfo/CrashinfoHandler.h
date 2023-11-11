@@ -22,14 +22,13 @@
 #include "FluentBit.h"
 
 #include "interface/IClassName.h"
-#include "interface/ISingleton.h"
 
 using namespace std;
 
-class OutCrashinfoHandler : public IClassName,
-                            public ISingleton<OutCrashinfoHandler> {
-friend class ISingleton<OutCrashinfoHandler>;
+class OutCrashinfoHandler : public IClassName {
 public:
+    static OutCrashinfoHandler& getInstance();
+
     virtual ~OutCrashinfoHandler();
 
     int onInit(struct flb_output_instance *ins, struct flb_config *config, void *data);

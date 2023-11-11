@@ -39,8 +39,8 @@ static int cb_webos_systemd_filter(const void *data, size_t bytes, const char *t
     return filterWebOSSystemd(data, bytes, tag, tag_len, out_buf, out_size, instance, context, config);
 }
 
-char name[] = "webos_systemd";
-char description[] = "webos_systemd filter";
+static char name[] = "webos_systemd";
+static char description[] = "webos_systemd filter";
 struct flb_filter_plugin filter_webos_systemd_plugin = {
     .name         = name,
     .description  = description,

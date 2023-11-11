@@ -16,7 +16,7 @@
 
 #include "ErrCode.h"
 
-const char* strerror(enum ErrCode errCode)
+const char* ErrCodeToStr(enum ErrCode errCode)
 {
     switch (errCode) {
     case ErrCode_NONE:
@@ -29,6 +29,8 @@ const char* strerror(enum ErrCode errCode)
         return "Invalid request params";
     case ErrCode_LOGIN_FAILED:
         return "Login failed";
+    case ErrCode_FORK_FAILED:
+        return "Fork failed";
     }
     return "Undefined error";
 }

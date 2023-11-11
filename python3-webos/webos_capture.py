@@ -119,8 +119,17 @@ class WebOSCapture:
             args = '{{"path":"{}","method":"DISPLAY","width":1920,"height":1080,"format":"JPEG"}}'.format(file)
             command = "luna-send -n 1 luna://com.webos.service.capture/executeOneShot '{}'".format(args)
         logging.info(command)
-        subprocess.check_output(command, shell=True, encoding='utf-8')
-        logging.info('Capture screenshot : {}'.format(file))
+        # subprocess.check_output(command, shell=True, encoding='utf-8')
+        # logging.info('Capture screenshot : {}'.format(file))
+        result = subprocess.check_output(command, shell=True, encoding='utf-8')
+        try:
+            json_obj = json.loads(result)
+            if json_obj["returnValue"]:
+                logging.info('Capture screenshot : {}'.format(file))
+            else:
+                logging.warning('{}'.format(json.dumps(json_obj)))
+        except:
+            logging.error('{}'.format(result))
         return
 
     def capture_tcsteps(self, file=DEFAULT_TCSTEPS):

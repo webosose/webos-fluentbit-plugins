@@ -52,12 +52,11 @@ public:
 
     bool initialize(rpa_queue_t* queue = NULL);
     void finalize(void);
+    void onThread(void);
 
     static unsigned long TIMEOUT;
 
 private:
-    static void *onThread(void *ctx);
-
     GMainLoop* m_mainLoop = NULL;
     pthread_t m_thread;
     rpa_queue_t* m_queue;
