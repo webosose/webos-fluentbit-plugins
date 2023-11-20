@@ -55,6 +55,12 @@ extern "C" void flushOutCrashinfo(const void *data, size_t bytes, const char *ta
     OutCrashinfoHandler::getInstance().onFlush(data, bytes, tag, tag_len, ins, context, config);
 }
 
+OutCrashinfoHandler& OutCrashinfoHandler::getInstance()
+{
+    static OutCrashinfoHandler s_instance;
+    return s_instance;
+}
+
 OutCrashinfoHandler::OutCrashinfoHandler()
     : m_workDir(PATH_VAR_SPOOL_CRASHINFO)
     , m_maxEntries(DEFAULT_MAX_ENTRIES)
@@ -183,8 +189,9 @@ void OutCrashinfoHandler::onFlush(const void *data, size_t bytes, const char *ta
                 struct stat attr;
                 errno = 0;
                 if (stat(crashEntry_c, &attr) == -1) {
-                    const char* errmsg = strerror(errno);
-                    PLUGIN_WARN("Failed to stat %s: %s", crashEntry_c, errmsg);
+                    int ec = errno;
+                    char errbuf[1024];
+                    PLUGIN_WARN("Failed to stat %s: %s", crashEntry_c, strerror_r(ec, errbuf, sizeof(errbuf)));
                     continue;
                 }
                 PLUGIN_INFO("ctime: (%ld), m_time: (%ld), entry: (%s)", attr.st_ctime, attr.st_mtime, crashEntry_c);

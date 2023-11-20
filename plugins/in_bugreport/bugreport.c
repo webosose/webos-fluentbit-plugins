@@ -38,8 +38,8 @@ static int bugreport_collect(struct flb_input_instance *ins, struct flb_config *
 }
 
 /* Plugin reference */
-char name[] = "bugreport";
-char description[] = "Collect information for bugreport";
+static char name[] = "bugreport";
+static char description[] = "Collect information for bugreport";
 struct flb_input_plugin in_bugreport_plugin = {
     .name = name,
     .description = description,

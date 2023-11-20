@@ -23,7 +23,6 @@
 #include "FluentBit.h"
 
 #include "interface/IClassName.h"
-#include "interface/ISingleton.h"
 
 using namespace std;
 
@@ -38,10 +37,10 @@ struct time_information
     int change_mday;
 };
 
-class JiraHandler : public IClassName,
-                    public ISingleton<JiraHandler> {
-friend class ISingleton<JiraHandler>;
+class JiraHandler : public IClassName {
 public:
+    static JiraHandler& getInstance();
+
     virtual ~JiraHandler();
 
     int onInit(struct flb_output_instance *ins, struct flb_config *config, void *data);
@@ -50,6 +49,8 @@ public:
 
 private:
     JiraHandler();
+    JiraHandler(const JiraHandler&) = delete;
+    JiraHandler& operator=(const JiraHandler&) = delete;
 
     int initDefaultTime();
     void initDistroInfo();

@@ -25,37 +25,40 @@
 #include "bus/LunaHandle.h"
 #include "external/rpa_queue.h"
 #include "interface/IClassName.h"
-#include "interface/ISingleton.h"
 #include "util/ErrCode.h"
 
 using namespace std;
 
-class BugreportHandler : public LunaHandle,
-                         public ISingleton<BugreportHandler> {
-friend class ISingleton<BugreportHandler>;
+class BugreportHandler : public LunaHandle {
 public:
+    static BugreportHandler& getInstance();
+
     virtual ~BugreportHandler();
 
     int onInit(struct flb_input_instance *in, struct flb_config *config, void *data);
     int onExit(void *in_context, struct flb_config *config);
     int onCollect(struct flb_input_instance *ins, struct flb_config *config, void *in_context);
 
+    gboolean onKeyboardEvent(GIOChannel *channel, GIOCondition condition, gpointer data);
+    bool onCreateToast(LSHandle *sh, LSMessage *message, void *ctx);
+    bool onLaunchBugreportApp(LSHandle *sh, LSMessage *message, void *ctx);
+
+    static bool getConfig(LSHandle *sh, LSMessage *msg, void *ctx);
+    static bool setConfig(LSHandle *sh, LSMessage *msg, void *ctx);
+    static bool createBug(LSHandle *sh, LSMessage *msg, void *ctx);
+
 private:
     static bool onGetAttachedNonStorageDeviceList(LSHandle *sh, LSMessage *reply, void *ctx);
     static int findKeyboardFd();
-    static gboolean onKeyboardEvent(GIOChannel *channel, GIOCondition condition, gpointer data);
-    static bool onCreateToast(LSHandle *sh, LSMessage *message, void *ctx);
-    static bool onLaunchBugreportApp(LSHandle *sh, LSMessage *message, void *ctx);
     static bool onProcessMethod(LSHandle *sh, LSMessage *msg, void *ctx);
     static ErrCode parseRequest(Message& request, JValue& requestPayload, void* ctx);
     static bool sendResponse(Message& request, ErrCode errCode);
     static bool sendResponse(Message& request, const string& payload);
-    static bool getConfig(LSHandle *sh, LSMessage *msg, void *ctx);
-    static bool setConfig(LSHandle *sh, LSMessage *msg, void *ctx);
-    static bool createBug(LSHandle *sh, LSMessage *msg, void *ctx);
     static ErrCode createTicket(const string& summary, const string& description, const string& priority, const string& reproducibility, const string& issuetype, const string& uploadFiles, string& key);
 
     BugreportHandler();
+    BugreportHandler(const BugreportHandler&) = delete;
+    BugreportHandler& operator=(const BugreportHandler&) = delete;
 
     bool onRegisterServerStatus(bool isConnected);
     void createToast(const string& message);

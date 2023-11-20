@@ -48,6 +48,12 @@ extern "C" int filterWebOSSystemd(const void *data, size_t bytes, const char *ta
     return WebOSSystemdFilter::getInstance().onFilter(data, bytes, tag, tag_len, out_buf, out_size, instance, context, config);
 }
 
+WebOSSystemdFilter& WebOSSystemdFilter::getInstance()
+{
+    static WebOSSystemdFilter s_instance;
+    return s_instance;
+}
+
 WebOSSystemdFilter::WebOSSystemdFilter()
     : m_isRespawned(false)
     , m_isPowerOnDone(false)
@@ -70,6 +76,7 @@ WebOSSystemdFilter::~WebOSSystemdFilter()
 
 int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_config *config, void *data)
 {
+    char errbuf[1024];
     // Check isRespawned
     m_isRespawned = File::isFile(PATH_RESPAWNED);
     if (!m_isRespawned) {
@@ -78,7 +85,7 @@ int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_
         errno = 0;
         if (-1 == clock_gettime(CLOCK_REALTIME, &m_respawnedTime)) {
             int ec = errno;
-            PLUGIN_ERROR("Failed to clock_gettime : %s", strerror(ec));
+            PLUGIN_ERROR("Failed to clock_gettime : %s", strerror_r(ec, errbuf, sizeof(errbuf)));
             m_respawnedTime = { 0, 0 };
         }
         PLUGIN_INFO("Respawned Timestamp(%ld.%03ld)", m_respawnedTime.tv_sec, m_respawnedTime.tv_nsec/(1000*1000));
@@ -96,7 +103,7 @@ int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_
         return -1;
     }
     if (!stderr.empty()) {
-        PLUGIN_INFO(" ! %s", stderr.c_str());
+        PLUGIN_INFO("! %s", stderr.c_str());
     }
     if (!stdout.empty()) {
         lines = g_strsplit(stdout.c_str(), "\n", 2);
@@ -105,7 +112,7 @@ int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_
             deviceId = StringUtil::trim(lines[0]);
             deviceName = StringUtil::trim(lines[1]);
         } else {
-            PLUGIN_INFO(" > %s", stdout.c_str());
+            PLUGIN_INFO("> %s", stdout.c_str());
         }
         g_strfreev(lines);
     }
@@ -118,7 +125,7 @@ int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_
         return -1;
     }
     if (!stderr.empty()) {
-        PLUGIN_INFO(" ! %s", stderr.c_str());
+        PLUGIN_INFO("! %s", stderr.c_str());
     }
     if (!stdout.empty()) {
         lines = g_strsplit(stdout.c_str(), "\n", 2);
@@ -127,7 +134,7 @@ int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_
             webosName = StringUtil::trim(lines[0]);
             webosBuildId = StringUtil::trim(lines[1]);
         } else {
-            PLUGIN_INFO(" > %s", stdout.c_str());
+            PLUGIN_INFO("> %s", stdout.c_str());
         }
         g_strfreev(lines);
     }
@@ -149,13 +156,13 @@ int WebOSSystemdFilter::onInit(struct flb_filter_instance *instance, struct flb_
     errno = 0;
     if (-1 == clock_gettime(CLOCK_MONOTONIC, &m_monotimeBeforeSync)) {
         int ec = errno;
-        PLUGIN_ERROR("Failed to clock_gettime (MONOTIME) : %s", strerror(ec));
+        PLUGIN_ERROR("Failed to clock_gettime (MONOTIME) : %s", strerror_r(ec, errbuf, sizeof(errbuf)));
     }
     PLUGIN_INFO("MonotimeBeforeSync : %10lld.%09ld", m_monotimeBeforeSync.tv_sec, m_monotimeBeforeSync.tv_nsec);
     errno = 0;
     if (-1 == clock_gettime(CLOCK_REALTIME, &m_realtimeBeforeSync)) {
         int ec = errno;
-        PLUGIN_ERROR("Failed to clock_gettime (REALTIME) : %s", strerror(ec));
+        PLUGIN_ERROR("Failed to clock_gettime (REALTIME) : %s", strerror_r(ec, errbuf, sizeof(errbuf)));
     }
     PLUGIN_INFO("RealtimeBeforeSync : %10lld.%09ld", m_realtimeBeforeSync.tv_sec, m_realtimeBeforeSync.tv_nsec);
 
@@ -260,17 +267,18 @@ void WebOSSystemdFilter::processPendings(msgpack_unpacked* result, msgpack_packe
     struct timespec monotimeAfterSync;
     struct timespec realtimeDiff;
     struct timespec monotimeDiff;
+    char errbuf[1024];
 
     errno = 0;
     if (-1 == clock_gettime(CLOCK_REALTIME, &realtimeAfterSync)) {
         int ec = errno;
-        PLUGIN_ERROR("Failed to clock_gettime (REALTIME) : %s", strerror(ec));
+        PLUGIN_ERROR("Failed to clock_gettime (REALTIME) : %s", strerror_r(ec, errbuf, sizeof(errbuf)));
         return;
     }
     errno = 0;
     if (-1 == clock_gettime(CLOCK_MONOTONIC, &monotimeAfterSync)) {
         int ec = errno;
-        PLUGIN_ERROR("Failed to clock_gettime (MONOTIME) : %s", strerror(ec));
+        PLUGIN_ERROR("Failed to clock_gettime (MONOTIME) : %s", strerror_r(ec, errbuf, sizeof(errbuf)));
         return;
     }
     PLUGIN_INFO("MonotimeBeforeSync : %10lld.%09ld", m_monotimeBeforeSync.tv_sec, m_monotimeBeforeSync.tv_nsec);

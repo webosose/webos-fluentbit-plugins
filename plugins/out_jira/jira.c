@@ -18,6 +18,10 @@
 
 #include "util/Logger.h"
 
+extern int initJiraHandler(struct flb_output_instance *ins, struct flb_config *config, void *data);
+extern int exitJiraHandler(void *data, struct flb_config *config);
+extern void flushJira(const void *data, size_t bytes, const char *tag, int tag_len, struct flb_input_instance *ins, void *context, struct flb_config *config);
+
 static int cb_jira_init(struct flb_output_instance *ins, struct flb_config *config, void *data)
 {
     setLogContext(ins->log_level, ins->p->name);
@@ -35,8 +39,8 @@ static int cb_jira_exit(void *data, struct flb_config *config)
     return exitJiraHandler(data, config);
 }
 
-char name[] = "jira";
-char description[] = "Create JIRA";
+static char name[] = "jira";
+static char description[] = "Create JIRA";
 struct flb_output_plugin out_jira_plugin = {
     .name         = name,
     .description  = description,

@@ -107,7 +107,8 @@ void BugreportScreenshotManager::removeScreenshots()
             PLUGIN_INFO("Screenshot removed : %s", fullpath);
         } else {
             int ec = errno;
-            PLUGIN_WARN("Failed to remove %s : %s", fullpath, strerror(ec));
+            char errbuf[1024];
+            PLUGIN_WARN("Failed to remove %s : %s", fullpath, strerror_r(ec, errbuf, sizeof(errbuf)));
         }
     }
     closedir(dir);

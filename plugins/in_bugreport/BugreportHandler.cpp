@@ -75,14 +75,50 @@ extern "C" int collectBugreport(struct flb_input_instance *ins, struct flb_confi
     return BugreportHandler::getInstance().onCollect(ins, config, context);
 }
 
+extern "C" bool getConfig(LSHandle *sh, LSMessage *msg, void *ctx)
+{
+    return BugreportHandler::getInstance().getConfig(sh, msg, ctx);
+}
+
+extern "C" bool setConfig(LSHandle *sh, LSMessage *msg, void *ctx)
+{
+    return BugreportHandler::getInstance().setConfig(sh, msg, ctx);
+}
+
+extern "C" bool createBug(LSHandle *sh, LSMessage *msg, void *ctx)
+{
+    return BugreportHandler::getInstance().createBug(sh, msg, ctx);
+}
+
+extern "C" gboolean onKeyboardEvent(GIOChannel *channel, GIOCondition condition, gpointer data)
+{
+    return BugreportHandler::getInstance().onKeyboardEvent(channel, condition, data);
+}
+
+extern "C" bool onCreateToast(LSHandle *sh, LSMessage *message, void *ctx)
+{
+    return BugreportHandler::getInstance().onCreateToast(sh, message, ctx);
+}
+
+extern "C" bool onLaunchBugreportApp(LSHandle *sh, LSMessage *message, void *ctx)
+{
+    return BugreportHandler::getInstance().onLaunchBugreportApp(sh, message, ctx);
+}
+
 const LSMethod BugreportHandler::METHOD_TABLE[] = {
-    { "getConfig",               BugreportHandler::getConfig, LUNA_METHOD_FLAGS_NONE },
-    { "setConfig",               BugreportHandler::setConfig, LUNA_METHOD_FLAGS_NONE },
-    { "createBug",               BugreportHandler::createBug, LUNA_METHOD_FLAGS_NONE },
-    { nullptr, nullptr }
+    { "getConfig",               ::getConfig, LUNA_METHOD_FLAGS_NONE },
+    { "setConfig",               ::setConfig, LUNA_METHOD_FLAGS_NONE },
+    { "createBug",               ::createBug, LUNA_METHOD_FLAGS_NONE },
+    { nullptr, nullptr },
 };
 
 JValue BugreportHandler::Null = Object();
+
+BugreportHandler& BugreportHandler::getInstance()
+{
+    static BugreportHandler s_instance;
+    return s_instance;
+}
 
 BugreportHandler::BugreportHandler()
     : LunaHandle("com.webos.service.bugreport")
@@ -224,7 +260,7 @@ bool BugreportHandler::onGetAttachedNonStorageDeviceList(LSHandle *sh, LSMessage
         self.m_keyboardFd = newFd;
         PLUGIN_INFO("Keyboard fd : %d", newFd);
         GIOChannel *channel = g_io_channel_unix_new(newFd);
-        g_io_add_watch(channel, GIOCondition(G_IO_IN|G_IO_ERR|G_IO_HUP), onKeyboardEvent, NULL);
+        g_io_add_watch(channel, GIOCondition(G_IO_IN|G_IO_ERR|G_IO_HUP), ::onKeyboardEvent, NULL);
         g_io_channel_unref(channel);
     }
     return true;
@@ -236,6 +272,7 @@ int BugreportHandler::findKeyboardFd()
     char name[256];
     char phys[256];
     int fd = -1;
+    char errbuf[1024];
 
     for (int index = 0; index < MAX_INPUT_DEVICES; index++) {
         device = "/dev/input/event" + to_string(index);
@@ -246,14 +283,14 @@ int BugreportHandler::findKeyboardFd()
         errno = 0;
         if (ioctl(fd, EVIOCGNAME(sizeof(name)), name) == -1) {
             int ec = errno;
-            PLUGIN_DEBUG("Error in ioctl EVIOCGNAME for (%d) %s", ec, strerror(ec));
+            PLUGIN_DEBUG("Error in ioctl EVIOCGNAME for (%d) %s", ec, strerror_r(ec, errbuf, sizeof(errbuf)));
             close(fd);
             continue;
         }
         errno = 0;
         if (ioctl(fd, EVIOCGPHYS(sizeof(phys)), phys) == -1) {
             int ec = errno;
-            PLUGIN_DEBUG("Error in ioctl EVIOCGPHYS for (%d) %s", ec, strerror(ec));
+            PLUGIN_DEBUG("Error in ioctl EVIOCGPHYS for (%d) %s", ec, strerror_r(ec, errbuf, sizeof(errbuf)));
             close(fd);
             continue;
         }
@@ -266,7 +303,7 @@ int BugreportHandler::findKeyboardFd()
         errno = 0;
         if (ioctl(fd, EVIOCGBIT(0, sizeof(evbit)), evbit) == -1) {
             int ec = errno;
-            PLUGIN_ERROR("Error in ioctl EVIOCGBIT for (%d) %s", ec, strerror(ec));
+            PLUGIN_ERROR("Error in ioctl EVIOCGBIT for (%d) %s", ec, strerror_r(ec, errbuf, sizeof(errbuf)));
             close(fd);
             continue;
         }
@@ -368,7 +405,7 @@ void BugreportHandler::createToast(const string& message)
     if (!LSCallOneReply(LunaHandle::get(),
             "luna://com.webos.notification/createToast",
             payload.stringify().c_str(),
-            (LSFilterFunc)BugreportHandler::onCreateToast,
+            ::onCreateToast,
             NULL,
             NULL,
             &lserror)) {
@@ -389,7 +426,7 @@ void BugreportHandler::launchBugreportApp()
     if (!LSCallOneReply(LunaHandle::get(),
             "luna://com.webos.service.applicationmanager/launch",
             "{\"id\":\"com.webos.app.bugreport\"}",
-            (LSFilterFunc)BugreportHandler::onLaunchBugreportApp,
+            ::onLaunchBugreportApp,
             NULL,
             NULL,
             &lserror)) {
@@ -445,7 +482,7 @@ bool BugreportHandler::sendResponse(Message& request, ErrCode errCode)
     if (ErrCode_NONE != errCode) {
         responsePayload.put("returnValue", false);
         responsePayload.put("errorCode", errCode);
-        responsePayload.put("errorText", strerror(errCode));
+        responsePayload.put("errorText", ErrCodeToStr(errCode));
     } else {
         responsePayload.put("returnValue", true);
     }
@@ -545,7 +582,8 @@ bool BugreportHandler::createBug(LSHandle *sh, LSMessage *msg, void *ctx)
         errno = 0;
         if (-1 == unlink(screenshotPath)) {
             int ec = errno;
-            PLUGIN_WARN("Failed to remove %s : %s", screenshotPath, strerror(ec));
+            char errbuf[1024];
+            PLUGIN_WARN("Failed to remove %s : %s", screenshotPath, strerror_r(ec, errbuf, sizeof(errbuf)));
             continue;
         }
         PLUGIN_INFO("Removed %s", screenshotPath);
@@ -570,7 +608,7 @@ ErrCode BugreportHandler::createTicket(const string& summary, const string& desc
     gchar** lines;
     if (!File::popen(command, stdout, stderr, &ret, errmsg)) {
         PLUGIN_WARN("Failed to webos_issue.py : %s", errmsg.c_str());
-        return ErrCode_INTERNAL_ERROR;
+        return ErrCode_FORK_FAILED;
     }
     if (!stderr.empty()) {
         PLUGIN_WARN(" ! %s", stderr.c_str());
@@ -579,7 +617,7 @@ ErrCode BugreportHandler::createTicket(const string& summary, const string& desc
         lines = g_strsplit(stdout.c_str(), "\n", 0);
         guint len = g_strv_length(lines);
         for (guint i = 0; i < len; i++) {
-            PLUGIN_INFO(" > %s", lines[i]);
+            PLUGIN_INFO("> %s", lines[i]);
             if (strncmp(lines[i], TicketCreated, strlen(TicketCreated)))
                 continue;
             string tmp = lines[i] + strlen(TicketCreated);

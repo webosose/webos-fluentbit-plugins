@@ -49,10 +49,10 @@ struct flb_in_coredump_config {
     const char *crashreport_script;
 };
 
-class InCrashinfoHandler : public IClassName,
-                           public ISingleton<InCrashinfoHandler> {
-friend class ISingleton<InCrashinfoHandler>;
+class InCrashinfoHandler : public IClassName {
 public:
+    static InCrashinfoHandler& getInstance();
+
     virtual ~InCrashinfoHandler();
 
     int onInit(struct flb_input_instance *ins, struct flb_config *config, void *data);
@@ -61,6 +61,8 @@ public:
 
 private:
     InCrashinfoHandler();
+    InCrashinfoHandler(const InCrashinfoHandler&) = delete;
+    InCrashinfoHandler& operator=(const InCrashinfoHandler&) = delete;
 
     void initDistroInfo();
     int verifyCoredumpFile(const char *corefile);

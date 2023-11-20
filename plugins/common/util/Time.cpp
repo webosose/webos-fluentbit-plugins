@@ -85,14 +85,14 @@ std::string Time::getCurrentTime(const char* format)
     if (clock_gettime(CLOCK_REALTIME, &ts) == -1) {
         return "";
     }
-    const struct tm *tm = std::localtime(&ts.tv_sec);
-    if (tm == NULL) {
+    struct tm tm;
+    if (NULL == localtime_r(&ts.tv_sec, &tm)) {
         return "";
     }
 
     std::string timeStr(30, '\0');
     size_t size = 0;
-    if ((size = std::strftime(&timeStr[0], timeStr.size(), format, tm)) == 0) {
+    if ((size = std::strftime(&timeStr[0], timeStr.size(), format, &tm)) == 0) {
         return "";
     }
 

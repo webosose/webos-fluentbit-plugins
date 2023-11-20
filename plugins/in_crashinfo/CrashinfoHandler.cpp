@@ -81,6 +81,12 @@ vector<string> split(const string& str, char delim = '.')
     return v;
 }
 
+InCrashinfoHandler& InCrashinfoHandler::getInstance()
+{
+    static InCrashinfoHandler s_instance;
+    return s_instance;
+}
+
 InCrashinfoHandler::InCrashinfoHandler()
     : m_workDir(PATH_TMP_CRASHINFO)
     , m_maxEntries(DEFAULT_MAX_ENTRIES)
@@ -210,7 +216,8 @@ int InCrashinfoHandler::onExit(void *context, struct flb_config *config)
 int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_config *config, void *context)
 {
     struct flb_in_coredump_config *ctx = (flb_in_coredump_config *)context;
-    struct inotify_event *event;
+    struct inotify_event event;
+    char errbuf[1024];
 
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
@@ -235,24 +242,26 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    for (; ctx->buf_start + EVENT_SIZE < ctx->buf_len; ctx->buf_start += EVENT_SIZE + event->len) {
+    for (; ctx->buf_start + EVENT_SIZE < ctx->buf_len; ctx->buf_start += EVENT_SIZE + event.len) {
         PLUGIN_DEBUG("while loop: buf_start=%d, buf_len=%d", ctx->buf_start, ctx->buf_len);
-        event=(struct inotify_event*) (ctx->buf+ctx->buf_start);
+        // event=(struct inotify_event*) (ctx->buf+ctx->buf_start);
+        // struct inotify_event event;
+        memcpy(&event, ctx->buf+ctx->buf_start, sizeof(event));
 
-        if (event->len == 0) {
+        if (event.len == 0) {
             PLUGIN_ERROR("Event length is 0");
             continue;
         }
-        if (event->len > ctx->buf_len - ctx->buf_start - EVENT_SIZE) {
-            PLUGIN_ERROR("Too long event : %u (start : %d, len : %d)", event->len, ctx->buf_start, ctx->buf_len);
+        if (event.len > ctx->buf_len - ctx->buf_start - EVENT_SIZE) {
+            PLUGIN_ERROR("Too long event : %u (start : %d, len : %d)", event.len, ctx->buf_start, ctx->buf_len);
             break;
         }
-        if (!(event->mask & IN_CREATE)) {
-            PLUGIN_ERROR("Not create event : %s", event->name);
+        if (!(event.mask & IN_CREATE)) {
+            PLUGIN_ERROR("Not create event : %s", event.name);
             continue;
         }
 
-        string coredumpFilename = event->name;
+        string coredumpFilename = event.name;
         string coredumpFullpath = File::join(ctx->path, coredumpFilename);
         PLUGIN_INFO("New file is created : (%s)", coredumpFullpath.c_str());
         // Guarantee coredump file closing time
@@ -281,8 +290,8 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
                 const char* crashEntry_c = crashEntry.c_str();
                 errno = 0;
                 if (stat(crashEntry_c, &attr) == -1) {
-                    char* errmsg = strerror(errno);
-                    PLUGIN_WARN("Failed to stat %s: %s", crashEntry_c, errmsg);
+                    int ec = errno;
+                    PLUGIN_WARN("Failed to stat %s: %s", crashEntry_c, strerror_r(ec, errbuf, sizeof(errbuf)));
                     continue;
                 }
                 PLUGIN_INFO("ctime: (%ld), m_time: (%ld), entry: (%s)", attr.st_ctime, attr.st_mtime, crashEntry_c);
@@ -308,8 +317,8 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
         const char* tmp = crashdir.c_str();
         errno = 0;
         if (!File::createDir(tmp)) {
-            tmp = strerror(errno);
-            PLUGIN_ERROR("Failed to create dir: %s: %s", crashdir.c_str(), tmp);
+            int ec = errno;
+            PLUGIN_ERROR("Failed to create dir: %s: %s", crashdir.c_str(), strerror_r(ec, errbuf, sizeof(errbuf)));
             continue;
         }
 
@@ -347,7 +356,7 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
                 (void) unlink(tmpCrashreport.c_str());
             } else {
                 int ec = errno;
-                PLUGIN_ERROR("Failed to copy crashreport: %s", strerror(ec));
+                PLUGIN_ERROR("Failed to copy crashreport: %s", strerror_r(ec, errbuf, sizeof(errbuf)));
                 continue;
             }
         }
@@ -462,6 +471,7 @@ int InCrashinfoHandler::parseCoredumpComm(const string& coredump, string& comm, 
     size_t keylen;
     char exe_str[STR_LEN];
     char *buf, *key, *val;
+    char *saveptr = NULL;
 
     PLUGIN_INFO("Full param : (%s)", coredump.c_str());
 
@@ -544,7 +554,7 @@ int InCrashinfoHandler::parseCoredumpComm(const string& coredump, string& comm, 
     strncpy(exe_str, exe.c_str(), STR_LEN);
     exe_str[STR_LEN-1] = '\0';
 
-    char *ptr = strtok(exe_str, "/");
+    char *ptr = strtok_r(exe_str, "/", &saveptr);
     while (ptr != NULL)
     {
         PLUGIN_DEBUG("ptr : (%s)", ptr);
@@ -552,7 +562,7 @@ int InCrashinfoHandler::parseCoredumpComm(const string& coredump, string& comm, 
             comm = ptr;
             break;
         }
-        ptr = strtok(NULL, "/");
+        ptr = strtok_r(NULL, "/", &saveptr);
     }
 
     return 0;

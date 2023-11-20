@@ -28,15 +28,14 @@
 #include "FluentBit.h"
 
 #include "interface/IClassName.h"
-#include "interface/ISingleton.h"
 
 using namespace pbnjson;
 using namespace std;
 
-class WebOSSystemdFilter : public IClassName,
-                           public ISingleton<WebOSSystemdFilter> {
-friend class ISingleton<WebOSSystemdFilter>;
+class WebOSSystemdFilter : public IClassName {
 public:
+    static WebOSSystemdFilter& getInstance();
+
     virtual ~WebOSSystemdFilter();
 
     int onInit(struct flb_filter_instance *instance, struct flb_config *config, void *data);
@@ -47,6 +46,8 @@ private:
     typedef std::function<void(msgpack_unpacked* result, msgpack_packer* packer)> SyslogIdentifierHandler;
 
     WebOSSystemdFilter();
+    WebOSSystemdFilter(const WebOSSystemdFilter&) = delete;
+    WebOSSystemdFilter& operator=(const WebOSSystemdFilter&) = delete;
 
     inline bool isTimeSyncDone();
 
