@@ -256,12 +256,14 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
             PLUGIN_ERROR("Too long event : %u (start : %d, len : %d)", event.len, ctx->buf_start, ctx->buf_len);
             break;
         }
+
+        char* eventname = ctx->buf + ctx->buf_start + EVENT_SIZE;
         if (!(event.mask & IN_CREATE)) {
-            PLUGIN_ERROR("Not create event : %s", event.name);
+            PLUGIN_ERROR("Not create event : %s", eventname);
             continue;
         }
 
-        string coredumpFilename = event.name;
+        string coredumpFilename = eventname;
         string coredumpFullpath = File::join(ctx->path, coredumpFilename);
         PLUGIN_INFO("New file is created : (%s)", coredumpFullpath.c_str());
         // Guarantee coredump file closing time
