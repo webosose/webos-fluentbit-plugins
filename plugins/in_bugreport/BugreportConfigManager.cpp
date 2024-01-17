@@ -1,4 +1,4 @@
-// Copyright (c) 2021 LG Electronics, Inc.
+// Copyright (c) 2021-2024 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@
 #include "util/Logger.h"
 #include "util/JValueUtil.h"
 #include "util/Time.h"
+#include "util/BuildInfo.hpp"
 
 // Exit status when setting username / password in webos_issue.py
 #define EXIT_STATUS_SUCCESS                 0
@@ -142,7 +143,9 @@ string BugreportConfigManager::getPassword() const
 
 string BugreportConfigManager::getSummary() const
 {
-    string foundOn = "[" WEBOS_TARGET_DISTRO "-" WEBOS_TARGET_MACHINE "]";
+    string distro = BuildInfo::instance()->get("DISTRO");
+    string machine = BuildInfo::instance()->get("MACHINE");
+    string foundOn = "[" + distro + "-" + machine + "]";
     string username = getUsername().empty() ? JIRA_DEFAULT_USERNAME : getUsername();
     return foundOn + " " + username + "_" + Time::getCurrentTime("%Y%m%d%H%M");
 }
