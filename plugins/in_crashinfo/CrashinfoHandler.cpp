@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 LG Electronics, Inc.
+// Copyright (c) 2021-2024 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,11 +27,13 @@
 #include <sys/types.h>
 #include <sys/xattr.h>
 #include <vector>
+#include <algorithm>
 
 #include "Environment.h"
 #include "util/File.h"
 #include "util/Logger.h"
 #include "util/MSGPackUtil.h"
+#include "util/BuildInfo.hpp"
 
 #define PATH_COREDUMP_DIRECTORY "/var/lib/systemd/coredump"
 
@@ -438,14 +440,10 @@ int InCrashinfoHandler::onCollect(struct flb_input_instance *ins, struct flb_con
 void InCrashinfoHandler::initDistroInfo()
 {
     int cnt = 0;
+    string distro = BuildInfo::instance()->get("DISTRO");
+    distro.erase(std::remove(distro.begin(), distro.end(), '-'), distro.end());
 
-    m_distro = "";
-    for (int i=0; i < strlen(WEBOS_TARGET_DISTRO); i++) {
-        if (*(WEBOS_TARGET_DISTRO+i) == '-')
-            continue;
-
-        m_distro += *(WEBOS_TARGET_DISTRO+i);
-    }
+    m_distro = distro;
 }
 
 int InCrashinfoHandler::verifyCoredumpFile(const char *corefile)

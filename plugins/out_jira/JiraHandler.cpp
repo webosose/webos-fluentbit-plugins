@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2023 LG Electronics, Inc.
+// Copyright (c) 2021-2024 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 #include <regex>
 #include <sstream>
 #include <sys/xattr.h>
+#include <algorithm>
 
 #include "Environment.h"
 #include "util/File.h"
@@ -27,6 +28,7 @@
 #include "util/MSGPackUtil.h"
 #include "util/PluginConf.h"
 #include "util/StringUtil.h"
+#include "util/BuildInfo.hpp"
 
 #define PATH_OPKG_CHECKSUM      "/var/luna/preferences/opkg_checksum"
 #define DEFAULT_TIME_FILE       "/lib/systemd/systemd"
@@ -398,14 +400,10 @@ int JiraHandler::initDefaultTime()
 void JiraHandler::initDistroInfo()
 {
     int cnt = 0;
+    string distro = BuildInfo::instance()->get("DISTRO");
+    distro.erase(std::remove(distro.begin(), distro.end(), '-'), distro.end());
 
-    m_distro = "";
-    for (int i=0; i < strlen(WEBOS_TARGET_DISTRO); i++) {
-        if (*(WEBOS_TARGET_DISTRO+i) == '-')
-            continue;
-
-        m_distro += *(WEBOS_TARGET_DISTRO+i);
-    }
+    m_distro = distro;
 }
 
 int JiraHandler::initOpkgChecksum()
