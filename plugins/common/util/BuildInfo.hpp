@@ -31,7 +31,7 @@ public:
                     if (equals == "=") {
                         key = trim(key);
                         value = trim(value);
-                        keyValueMap_[key] = value;
+                        keyValueMap_[key] = move(value);
                     }
                 }
             }
@@ -44,16 +44,16 @@ public:
         return (it != keyValueMap_.end()) ? it->second : "";
     }
 
-    static const BuildInfo *instance() {
-        static BuildInfo s;
-        return &s;
-    }
+    static const BuildInfo *instance();
 
 private:
     std::string trim(const std::string& str) const {
         size_t first = str.find_first_not_of(' ');
         size_t last = str.find_last_not_of(' ');
-        return str.substr(first, (last - first + 1));
+        if (last >= first) {
+            return str.substr(first, (last - first + 1));
+        }
+        return str;
     }
 
     std::unordered_map<std::string, std::string> keyValueMap_;
