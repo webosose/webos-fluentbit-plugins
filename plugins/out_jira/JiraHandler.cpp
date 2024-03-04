@@ -403,7 +403,7 @@ void JiraHandler::initDistroInfo()
     string distro = BuildInfo::instance()->get("DISTRO");
     distro.erase(std::remove(distro.begin(), distro.end(), '-'), distro.end());
 
-    m_distro = distro;
+    m_distro = move(distro);
 }
 
 int JiraHandler::initOpkgChecksum()

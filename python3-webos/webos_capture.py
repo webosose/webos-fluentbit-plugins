@@ -101,11 +101,11 @@ class WebOSCapture:
         return
 
     def capture_messages(self, file=DEFAULT_MESSAGES):
-        message_files = ['var/log/' + x for x in os.listdir("/var/log") if x[:8] == 'messages']
-        if len(message_files) == 0:
+        log_files = ['var/log/' + x for x in os.listdir("/var/log") if x[:8] == 'messages' or x[:10] == 'legacy-log']
+        if len(log_files) == 0:
             logging.info('/var/log/messages does not exist')
             return
-        command = 'tar zcf {} -C / {}'.format(file, ' '.join(message_files))
+        command = 'tar zcf {} -C / {}'.format(file, ' '.join(log_files))
         logging.info(command)
         subprocess.check_output(command, shell=True, encoding='utf-8')
         logging.info('Capture messages : {}'.format(file))
