@@ -42,11 +42,12 @@
         "info": false
     },
     "deviceName": {
-        "raspberrypi4": "RPi4",
-        "raspberrypi4-64": "RPi4",
+        "ah212": "AML",
+        "o22n": "O22n",
         "qemux86": "Emulator",
         "qemux86-64": "Emulator",
-        "ah212": "AML"
+        "raspberrypi4": "RPi4",
+        "raspberrypi4-64": "RPi4"
     },
     "template": {
         "bug": "<h3>Steps To Reproduce:</h3><p><b>1.</b>&nbsp;</p><p><b>2.</b>&nbsp;</p><p><b>3.</b>&nbsp;</p><h3>Expected Result:</h3><p>// Describe the expected results.</p><h3>Actual Result:</h3><p>// Describe the actual results.</p>"

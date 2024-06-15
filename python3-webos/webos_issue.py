@@ -151,15 +151,19 @@ class WebOSIssue:
             return self._jira.issue_create(fields)
         except requests.exceptions.HTTPError as ex:
             # {"errorMessages":[],"errors":{"components":"Component name 'luna-surfacemanager-base' is not valid"}}
+            # {"errorMessages":[],"errors":{"customfield_18122":"Option value 'Nano-RPi4' is not valid"}}
             logging.warning('{} {}'.format(ex.response.status_code, ex.response.text))
             if ex.response.status_code == 400:
-                errmsg = ex.response.json().get('errors', {}).get('components')
+                errors = ex.response.json().get('errors', {})
+                if len(errors) != 1 or 'components' not in errors:
+                    raise ex
+                errmsg = errors['components']
                 errmsg_split = errmsg.split(' ')
                 if len(errmsg_split) != 6:
-                    pass
+                    raise ex
                 del errmsg_split[2]
                 if errmsg_split != ['Component', 'name', 'is', 'not', 'valid']:
-                    pass
+                    raise ex
                 for component in components:
                     fields['labels'].append('Component-Not-Found:{}'.format(component))
                 fields['components'] = [{'name': COMPONENT_PM}]

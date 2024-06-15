@@ -219,6 +219,8 @@ class NYX:
             # webOS TV Reference
             # webOS Signage Reference
             # webOS OSE
+            # webOS Nano Reference Headless
+            # webOS ACP Reference
             found_on = webos_name.split(' ')[1] + '-'
         except:
             return found_on
