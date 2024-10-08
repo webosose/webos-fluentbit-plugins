@@ -1,11 +1,12 @@
 {
     "jira": {
-        "url" : "http://clm.lge.com/issue",
-        "projectKey": "WRQ"
+        "url" : "http://jira.lge.com/issue",
+        "projectKey": "WRR",
+        "versionName": "RGT"
     },
     "account": {
         "id": "webosreporter",
-        "pw": "gAAAAABhaTX2Do29Mkts-flPy3UfiRAJ8xf_BBk9e0g9IBU0XhXHv6T34mLQfo7SbVHSo227NOAlIB3Ci5x8HNllWVdgZtSDng=="
+        "pw": "gAAAAABm8MFBAu1k_aDtHvndcOp2c1Z3w8TO2cEUpk0j4xc44DJGdClijzW8krjlgyAxybOwFp_cnRy0c0P-9RbSePnrjqGwFA=="
     },
     "platform": {
         "commands": [

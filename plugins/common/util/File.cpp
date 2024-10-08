@@ -58,7 +58,7 @@ bool File::concatToFilename(const string originPath, string& returnPath, const s
     size_t pos_dir = originPath.find_last_of("/");
 
     if (string::npos == pos_dir) {
-        filename = originPath;
+        filename = std::move(originPath);
     } else {
         pos_dir = pos_dir + 1;
         dir_path = originPath.substr(0, pos_dir);

@@ -88,7 +88,7 @@ void MSGPackUtil::putValue(msgpack_packer* packer, const string& key, const JVal
                 size_t arraySize = (size_t)arraySize_s;
                 packStr(packer, kv.first.asString());
                 msgpack_pack_array(packer, arraySize);
-                for (uint32_t i = 0; i < kv.second.arraySize(); ++i) {
+                for (int i = 0; i < arraySize_s; ++i) {
                     // TODO Support other type's array. Now support only string array.
                     if (kv.second[i].getType() != JV_STR) {
                         packStr(packer, "Not implemented");

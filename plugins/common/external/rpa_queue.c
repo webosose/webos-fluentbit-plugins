@@ -15,6 +15,7 @@
  */
 
 #include "rpa_queue.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -95,6 +96,11 @@ void rpa_queue_destroy(rpa_queue_t * queue)
  */
 bool rpa_queue_create(rpa_queue_t **q, uint32_t queue_capacity)
 {
+  // CERT INT30-C : Unsigned integer operation "queue_capacity * 4U" may wrap
+  if (queue_capacity > UINT_MAX / sizeof(void*)) {
+    return false;
+  }
+
   rpa_queue_t *queue;
   queue = malloc(sizeof(rpa_queue_t));
   if (!queue) {

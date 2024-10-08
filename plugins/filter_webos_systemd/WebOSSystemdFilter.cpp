@@ -339,6 +339,9 @@ void WebOSSystemdFilter::processPendings(msgpack_unpacked* result, msgpack_packe
                 // object extra : only for appExecution
                 if (kv.second.hasKey("_beginMs")) {
                     int64_t beginMs = kv.second["_beginMs"].asNumber<int64_t>();
+                    if (beginMs > LONG_MAX / 1000) {
+                        PLUGIN_WARN("beginMs is too large: %lld", beginMs);
+                    }
                     timespec beginTs = {(long)beginMs/1000, (long)(beginMs%1000)*1000*1000};
                     if (m_minPrevRealtime < beginTs && beginTs < m_maxPrevRealtime)
                         beginTs = beginTs + m_realtimeDiff - m_monotimeDiff;
